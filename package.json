@@ -1,0 +1,28 @@
+{
+  "name": "ts-firestore-admin-helper",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "gts lint",
+    "clean": "gts clean",
+    "fix": "gts fix",
+    "posttest": "npm run lint"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [],
+  "author": "Rukanda Faridsi",
+  "license": "MIT",
+  "description": "Typesafe Firestore Admin Helper",
+  "devDependencies": {
+    "gts": "^5.3.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.2.0"
+  }
+}
