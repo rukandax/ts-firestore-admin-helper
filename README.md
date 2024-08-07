@@ -63,3 +63,30 @@ yourCollection.editDocument(
     }
 );
 ```
+
+## Additional Notes
+
+### Firestore ID
+
+This helper does not use the default Firestore Document ID format to maintain consistency. It will generate its own Document ID based on the following rules:
+
+- 30 characters
+- Alphanumeric
+- Lowercase
+
+However, you can also customize your own ID by passing a second parameter to `addDocument`
+
+```typescript
+...
+
+// Create a new document with your own ID
+yourCollection.addDocument(
+  {
+    key1: 'value1',
+    key2: 'value2',
+  },
+  'your-own-id',
+);
+
+...
+```
