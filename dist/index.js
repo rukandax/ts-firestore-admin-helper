@@ -243,13 +243,11 @@ class FirestoreHelper {
         });
     }
     buildQuery(filters) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let query = this.collection;
-            filters.forEach(filter => {
-                query = query.where(filter.field, filter.operator, filter.value);
-            });
-            return query;
+        let query = this.collection;
+        filters.forEach(filter => {
+            query = query.where(filter.field, filter.operator, filter.value);
         });
+        return query;
     }
     subscribeDocument(docId, callback) {
         return this.collection.doc(docId).onSnapshot(snapshot => {

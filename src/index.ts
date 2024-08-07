@@ -308,9 +308,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     }));
   }
 
-  async buildQuery(
-    filters: QueryFilter<T>[]
-  ): Promise<admin.firestore.Query<T>> {
+  buildQuery(filters: QueryFilter<T>[]): admin.firestore.Query<T> {
     let query: admin.firestore.Query<T> = this.collection;
 
     filters.forEach(filter => {
