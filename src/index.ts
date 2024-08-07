@@ -308,11 +308,9 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     }));
   }
 
-  async queryDocuments(
-    filters: QueryFilter<T>[],
-    limit = 25,
-    startAfterId?: string
-  ): Promise<{id: string; data: T | null}[]> {
+  async buildQuery(
+    filters: QueryFilter<T>[]
+  ): Promise<admin.firestore.Query<T>> {
     let query: admin.firestore.Query<T> = this.collection;
 
     filters.forEach(filter => {
@@ -323,7 +321,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
       );
     });
 
-    return this.getDocumentsData(query, limit, startAfterId);
+    return query;
   }
 
   subscribeDocument(

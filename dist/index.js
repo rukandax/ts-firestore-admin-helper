@@ -242,13 +242,13 @@ class FirestoreHelper {
             }));
         });
     }
-    queryDocuments(filters_1) {
-        return __awaiter(this, arguments, void 0, function* (filters, limit = 25, startAfterId) {
+    buildQuery(filters) {
+        return __awaiter(this, void 0, void 0, function* () {
             let query = this.collection;
             filters.forEach(filter => {
                 query = query.where(filter.field, filter.operator, filter.value);
             });
-            return this.getDocumentsData(query, limit, startAfterId);
+            return query;
         });
     }
     subscribeDocument(docId, callback) {

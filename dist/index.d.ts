@@ -46,10 +46,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         id: string;
         data: T | null;
     }[]>;
-    queryDocuments(filters: QueryFilter<T>[], limit?: number, startAfterId?: string): Promise<{
-        id: string;
-        data: T | null;
-    }[]>;
+    buildQuery(filters: QueryFilter<T>[]): Promise<admin.firestore.Query<T>>;
     subscribeDocument(docId: string, callback: (doc: {
         id: string;
         data: T;
