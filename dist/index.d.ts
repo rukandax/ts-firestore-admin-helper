@@ -8,19 +8,15 @@ type QueryFilter<T> = {
     operator: FirebaseFirestore.WhereFilterOp;
     value: any;
 };
-export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
-    private firestore;
+export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     private collection;
-    constructor(serviceAccountPath: string, collectionPath?: string);
-    private validateServiceAccount;
-    private handleInitializationError;
+    constructor(firestoreInstance: admin.firestore.Firestore, collectionPath: string);
     private checkConnection;
     private generateRandomId;
     private generateUniqueId;
     private getUnixTimestamp;
     private validateUnixTimestamp;
     private validateTimestampFields;
-    setCollection(collectionPath: string): this;
     addDocument(data: T, id?: string, override?: boolean): Promise<{
         id: string;
         data: T;
