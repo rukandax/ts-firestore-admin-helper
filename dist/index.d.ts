@@ -3,7 +3,7 @@ interface BaseDocument {
     createdAt?: number;
     updatedAt?: number;
 }
-type QueryFilter<T> = {
+type QueryPayload<T> = {
     field: keyof T;
     operator: FirebaseFirestore.WhereFilterOp;
     value: any;
@@ -35,24 +35,29 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         id: string;
         data: Partial<T>;
     }[]): Promise<void>;
-    batchDelete(docIds: string[]): Promise<void>;
+    batchRemove(docIds: string[]): Promise<void>;
     getDocument(docId: string): Promise<admin.firestore.DocumentSnapshot<T>>;
     getDocumentData(docId: string): Promise<{
         id: string;
-        data: T | null;
-    }>;
-    getDocuments(query: admin.firestore.Query<T>, limit?: number, startAfterId?: string): Promise<admin.firestore.QuerySnapshot<T>>;
-    getDocumentsData(query: admin.firestore.Query<T>, limit?: number, startAfterId?: string): Promise<{
+        data: T;
+    } | null>;
+    findDocuments(query: QueryPayload<T>[], limit?: number, startAfterId?: string): Promise<admin.firestore.QuerySnapshot<T>>;
+    findDocument(query: QueryPayload<T>[]): Promise<admin.firestore.QueryDocumentSnapshot<T, admin.firestore.DocumentData> | null>;
+    findDocumentsData(query: QueryPayload<T>[], limit?: number, startAfterId?: string): Promise<{
         id: string;
-        data: T | null;
+        data: T;
     }[]>;
-    buildQuery(filters: QueryFilter<T>[]): admin.firestore.Query<T>;
+    findDocumentData(query: QueryPayload<T>[]): Promise<{
+        id: string;
+        data: T;
+    } | null>;
+    buildQuery(filters: QueryPayload<T>[]): admin.firestore.Query<T>;
     subscribeDocument(docId: string, callback: (doc: {
         id: string;
         data: T;
     }) => void): () => void;
     subscribeCollection(callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void): () => void;
-    subscribeQuery(query: admin.firestore.Query<T>, callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void): () => void;
+    subscribeQuery(query: QueryPayload<T>[], callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void): () => void;
     private isFirestoreError;
     private getErrorMessage;
 }

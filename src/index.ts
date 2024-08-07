@@ -7,7 +7,7 @@ interface BaseDocument {
 }
 
 // Define a type for a query filter where the field must be a key of T
-type QueryFilter<T> = {
+type QueryPayload<T> = {
   field: keyof T; // Ensures field is a key of T
   operator: FirebaseFirestore.WhereFilterOp;
   value: any;
@@ -241,7 +241,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     });
   }
 
-  async batchDelete(docIds: string[]): Promise<void> {
+  async batchRemove(docIds: string[]): Promise<void> {
     return admin.firestore().runTransaction(async transaction => {
       for (const id of docIds) {
         const docRef = this.collection.doc(id);
@@ -262,17 +262,21 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     return this.collection.doc(docId).get();
   }
 
-  async getDocumentData(docId: string): Promise<{id: string; data: T | null}> {
+  async getDocumentData(docId: string): Promise<{id: string; data: T} | null> {
     const docSnapshot = await this.getDocument(docId);
-    return {id: docSnapshot.id, data: docSnapshot.data() as T | null};
+    if (docSnapshot.exists) {
+      return {id: docSnapshot.id, data: docSnapshot.data() as T};
+    }
+    return null;
   }
 
-  async getDocuments(
-    query: admin.firestore.Query<T>,
+  async findDocuments(
+    query: QueryPayload<T>[],
     limit = 25,
     startAfterId?: string
   ): Promise<admin.firestore.QuerySnapshot<T>> {
-    let firestoreQuery = query.limit(limit);
+    const findQuery = this.buildQuery(query);
+    let firestoreQuery = findQuery.limit(limit);
 
     if (startAfterId) {
       const startAfterDoc = await this.collection.doc(startAfterId).get();
@@ -299,19 +303,61 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     }
   }
 
-  async getDocumentsData(
-    query: admin.firestore.Query<T>,
+  async findDocument(
+    query: QueryPayload<T>[]
+  ): Promise<admin.firestore.QueryDocumentSnapshot<
+    T,
+    admin.firestore.DocumentData
+  > | null> {
+    const findQuery = this.buildQuery(query);
+    const firestoreQuery = findQuery.limit(1);
+
+    try {
+      const doc = (await firestoreQuery.get())?.docs?.[0] || null;
+      return doc;
+    } catch (error) {
+      if (
+        this.isFirestoreError(error) &&
+        error.code === 'failed-precondition'
+      ) {
+        const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
+        throw new Error(message);
+      } else {
+        throw new Error(
+          `Failed to get documents: ${this.getErrorMessage(error)}`
+        );
+      }
+    }
+  }
+
+  async findDocumentsData(
+    query: QueryPayload<T>[],
     limit = 25,
     startAfterId?: string
-  ): Promise<{id: string; data: T | null}[]> {
-    const querySnapshot = await this.getDocuments(query, limit, startAfterId);
-    return querySnapshot.docs.map(doc => ({
+  ): Promise<{id: string; data: T}[]> {
+    const querySnapshot = await this.findDocuments(query, limit, startAfterId);
+    return (querySnapshot?.docs || []).map(doc => ({
       id: doc.id,
-      data: doc.data() as T | null,
+      data: doc.data() as T,
     }));
   }
 
-  buildQuery(filters: QueryFilter<T>[]): admin.firestore.Query<T> {
+  async findDocumentData(
+    query: QueryPayload<T>[]
+  ): Promise<{id: string; data: T} | null> {
+    const doc = await this.findDocument(query);
+
+    if (doc?.exists) {
+      return {
+        id: doc.id,
+        data: doc.data(),
+      };
+    }
+
+    return null;
+  }
+
+  buildQuery(filters: QueryPayload<T>[]): admin.firestore.Query<T> {
     let query: admin.firestore.Query<T> = this.collection;
 
     filters.forEach(filter => {
@@ -370,10 +416,11 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
   }
 
   subscribeQuery(
-    query: admin.firestore.Query<T>,
+    query: QueryPayload<T>[],
     callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void
   ): () => void {
-    return query.onSnapshot(
+    const findQuery = this.buildQuery(query);
+    return findQuery.onSnapshot(
       snapshot => {
         try {
           callback(snapshot as admin.firestore.QuerySnapshot<T>);

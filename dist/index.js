@@ -183,7 +183,7 @@ class FirestoreHelper {
             }));
         });
     }
-    batchDelete(docIds) {
+    batchRemove(docIds) {
         return __awaiter(this, void 0, void 0, function* () {
             return admin.firestore().runTransaction((transaction) => __awaiter(this, void 0, void 0, function* () {
                 for (const id of docIds) {
@@ -205,12 +205,16 @@ class FirestoreHelper {
     getDocumentData(docId) {
         return __awaiter(this, void 0, void 0, function* () {
             const docSnapshot = yield this.getDocument(docId);
-            return { id: docSnapshot.id, data: docSnapshot.data() };
+            if (docSnapshot.exists) {
+                return { id: docSnapshot.id, data: docSnapshot.data() };
+            }
+            return null;
         });
     }
-    getDocuments(query_1) {
+    findDocuments(query_1) {
         return __awaiter(this, arguments, void 0, function* (query, limit = 25, startAfterId) {
-            let firestoreQuery = query.limit(limit);
+            const findQuery = this.buildQuery(query);
+            let firestoreQuery = findQuery.limit(limit);
             if (startAfterId) {
                 const startAfterDoc = yield this.collection.doc(startAfterId).get();
                 if (!startAfterDoc.exists) {
@@ -233,13 +237,46 @@ class FirestoreHelper {
             }
         });
     }
-    getDocumentsData(query_1) {
+    findDocument(query) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
+            const findQuery = this.buildQuery(query);
+            const firestoreQuery = findQuery.limit(1);
+            try {
+                const doc = ((_b = (_a = (yield firestoreQuery.get())) === null || _a === void 0 ? void 0 : _a.docs) === null || _b === void 0 ? void 0 : _b[0]) || null;
+                return doc;
+            }
+            catch (error) {
+                if (this.isFirestoreError(error) &&
+                    error.code === 'failed-precondition') {
+                    const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
+                    throw new Error(message);
+                }
+                else {
+                    throw new Error(`Failed to get documents: ${this.getErrorMessage(error)}`);
+                }
+            }
+        });
+    }
+    findDocumentsData(query_1) {
         return __awaiter(this, arguments, void 0, function* (query, limit = 25, startAfterId) {
-            const querySnapshot = yield this.getDocuments(query, limit, startAfterId);
-            return querySnapshot.docs.map(doc => ({
+            const querySnapshot = yield this.findDocuments(query, limit, startAfterId);
+            return ((querySnapshot === null || querySnapshot === void 0 ? void 0 : querySnapshot.docs) || []).map(doc => ({
                 id: doc.id,
                 data: doc.data(),
             }));
+        });
+    }
+    findDocumentData(query) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const doc = yield this.findDocument(query);
+            if (doc === null || doc === void 0 ? void 0 : doc.exists) {
+                return {
+                    id: doc.id,
+                    data: doc.data(),
+                };
+            }
+            return null;
         });
     }
     buildQuery(filters) {
@@ -274,7 +311,8 @@ class FirestoreHelper {
         });
     }
     subscribeQuery(query, callback) {
-        return query.onSnapshot(snapshot => {
+        const findQuery = this.buildQuery(query);
+        return findQuery.onSnapshot(snapshot => {
             try {
                 callback(snapshot);
             }
