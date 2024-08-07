@@ -163,7 +163,7 @@ class FirestoreHelper {
             }));
         });
     }
-    batchUpdate(updates) {
+    batchEdit(updates) {
         return __awaiter(this, void 0, void 0, function* () {
             return admin.firestore().runTransaction((transaction) => __awaiter(this, void 0, void 0, function* () {
                 for (const { id, data } of updates) {

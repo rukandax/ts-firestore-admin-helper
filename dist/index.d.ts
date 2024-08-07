@@ -31,7 +31,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         data: T;
         override?: boolean;
     }[]): Promise<void>;
-    batchUpdate(updates: {
+    batchEdit(updates: {
         id: string;
         data: Partial<T>;
     }[]): Promise<void>;

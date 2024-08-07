@@ -208,7 +208,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     });
   }
 
-  async batchUpdate(updates: {id: string; data: Partial<T>}[]): Promise<void> {
+  async batchEdit(updates: {id: string; data: Partial<T>}[]): Promise<void> {
     return admin.firestore().runTransaction(async transaction => {
       for (const {id, data} of updates) {
         const docRef = this.collection.doc(id);
