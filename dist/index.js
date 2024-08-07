@@ -42,7 +42,7 @@ class FirestoreHelper {
     }
     checkConnection() {
         return __awaiter(this, void 0, void 0, function* () {
-            const testDocRef = this.collection.doc('__ts_firestore_admin_helper_test_connection__');
+            const testDocRef = this.collection.doc('ts_firestore_admin_helper_test_connection');
             try {
                 yield testDocRef.get();
             }
