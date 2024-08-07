@@ -29,9 +29,10 @@ interface ServiceAccountJSON {
 }
 
 export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
-  private collection: admin.firestore.CollectionReference<T>;
+  private firestore: admin.firestore.Firestore;
+  private collection: admin.firestore.CollectionReference<T> | null = null;
 
-  constructor(collectionPath: string, serviceAccountPath: string) {
+  constructor(serviceAccountPath: string, collectionPath?: string) {
     let serviceAccount;
 
     if (!fs.existsSync(serviceAccountPath)) {
@@ -77,15 +78,11 @@ export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
       }
     }
 
-    this.collection = admin
-      .firestore()
-      .collection(collectionPath) as admin.firestore.CollectionReference<T>;
+    this.firestore = admin.firestore();
 
-    this.checkConnection().catch(error => {
-      throw new Error(
-        `Failed to connect to Firestore: ${this.getErrorMessage(error)}`
-      );
-    });
+    if (collectionPath) {
+      this.setCollection(collectionPath);
+    }
   }
 
   private validateServiceAccount(serviceAccountJSON: ServiceAccountJSON): void {
@@ -105,13 +102,17 @@ export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
   }
 
   private async checkConnection(): Promise<void> {
-    const testDocRef = this.collection.doc('__test__');
-    try {
-      await testDocRef.get();
-    } catch (error) {
-      throw new Error(
-        `Firestore connection check failed: ${this.getErrorMessage(error)}`
-      );
+    if (this.collection) {
+      const testDocRef = this.collection.doc('__test__');
+      try {
+        await testDocRef.get();
+      } catch (error) {
+        throw new Error(
+          `Firestore connection check failed: ${this.getErrorMessage(error)}`
+        );
+      }
+    } else {
+      throw new Error('Please set a collection first using setCollection');
     }
   }
 
@@ -126,15 +127,19 @@ export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
   }
 
   private async generateUniqueId(length: number) {
-    let id;
-    let doc: admin.firestore.DocumentSnapshot<T>;
+    if (this.collection) {
+      let id;
+      let doc: admin.firestore.DocumentSnapshot<T>;
 
-    do {
-      id = this.generateRandomId(length);
-      doc = await this.collection.doc(id).get();
-    } while (doc.exists);
+      do {
+        id = this.generateRandomId(length);
+        doc = await this.collection.doc(id).get();
+      } while (doc.exists);
 
-    return id;
+      return id;
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
   }
 
   private getUnixTimestamp() {
@@ -164,131 +169,71 @@ export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
     }
   }
 
+  setCollection(collectionPath: string) {
+    this.collection = this.firestore.collection(
+      collectionPath
+    ) as admin.firestore.CollectionReference<T>;
+
+    this.checkConnection().catch(error => {
+      throw new Error(
+        `Failed to connect to Firestore: ${this.getErrorMessage(error)}`
+      );
+    });
+
+    return this;
+  }
+
   async addDocument(
     data: T,
     id?: string,
     override?: boolean
   ): Promise<{id: string; data: T}> {
-    const docId = id || (await this.generateUniqueId(30));
-    const docRef = this.collection.doc(docId);
+    if (this.collection) {
+      const docId = id || (await this.generateUniqueId(30));
+      const docRef = this.collection.doc(docId);
 
-    const result = await admin.firestore().runTransaction(async transaction => {
-      const docSnapshot = await transaction.get(docRef);
+      const result = await admin
+        .firestore()
+        .runTransaction(async transaction => {
+          const docSnapshot = await transaction.get(docRef);
 
-      if (id && !(override || !docSnapshot.exists)) {
-        throw new Error(
-          `Document with ID ${id} already exists. Use "override: true" to replace the data.`
-        );
-      }
+          if (id && !(override || !docSnapshot.exists)) {
+            throw new Error(
+              `Document with ID ${id} already exists. Use "override: true" to replace the data.`
+            );
+          }
 
-      const timestampedData: T = {
-        ...data,
-        createdAt: id
-          ? docSnapshot.data()?.createdAt || this.getUnixTimestamp()
-          : this.getUnixTimestamp(),
-        updatedAt: this.getUnixTimestamp(),
-      };
+          const timestampedData: T = {
+            ...data,
+            createdAt: id
+              ? docSnapshot.data()?.createdAt || this.getUnixTimestamp()
+              : this.getUnixTimestamp(),
+            updatedAt: this.getUnixTimestamp(),
+          };
 
-      transaction.set(docRef, timestampedData, {merge: override});
+          transaction.set(docRef, timestampedData, {merge: override});
 
-      return {id: docId, data: timestampedData};
-    });
+          return {id: docId, data: timestampedData};
+        });
 
-    return result;
+      return result;
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
   }
 
   async editDocument(
     docId: string,
     data: Partial<T>
   ): Promise<{id: string; data: T}> {
-    const docRef = this.collection.doc(docId);
+    if (this.collection) {
+      const docRef = this.collection.doc(docId);
 
-    return admin.firestore().runTransaction(async transaction => {
-      const docSnapshot = await transaction.get(docRef);
-
-      if (!docSnapshot.exists) {
-        throw new Error(`Document with ID ${docId} does not exist`);
-      }
-
-      this.validateTimestampFields(data);
-
-      // Prevent updating the document ID
-      if ('id' in data) {
-        throw new Error('Cannot update the document ID');
-      }
-
-      const timestampedData: Partial<T> = {
-        ...data,
-        updatedAt: this.getUnixTimestamp(),
-      };
-
-      transaction.update(
-        docRef,
-        timestampedData as admin.firestore.UpdateData<T>
-      );
-
-      // Fetch the updated document
-      const updatedDocSnapshot = await docRef.get();
-      if (!updatedDocSnapshot.exists) {
-        throw new Error(
-          `Document with ID ${docId} does not exist after update`
-        );
-      }
-
-      return {id: updatedDocSnapshot.id, data: updatedDocSnapshot.data() as T};
-    });
-  }
-
-  async removeDocument(docId: string): Promise<void> {
-    const docRef = this.collection.doc(docId);
-
-    return admin.firestore().runTransaction(async transaction => {
-      const docSnapshot = await transaction.get(docRef);
-
-      if (!docSnapshot.exists) {
-        throw new Error(`Document with ID ${docId} does not exist`);
-      }
-
-      transaction.delete(docRef);
-    });
-  }
-
-  async batchAdd(
-    documents: {id?: string; data: T; override?: boolean}[]
-  ): Promise<void> {
-    return admin.firestore().runTransaction(async transaction => {
-      for (const {id, data, override} of documents) {
-        const docId = id || (await this.generateUniqueId(30));
-        const docRef = this.collection.doc(docId);
-        const docSnapshot = await transaction.get(docRef);
-
-        if (id && !(override || !docSnapshot.exists)) {
-          throw new Error(
-            `Document with ID ${id} already exists. Use "override: true" to replace the data.`
-          );
-        }
-
-        const timestampedData: T = {
-          ...data,
-          createdAt: id
-            ? docSnapshot.data()?.createdAt || this.getUnixTimestamp()
-            : this.getUnixTimestamp(),
-          updatedAt: this.getUnixTimestamp(),
-        };
-
-        transaction.set(docRef, timestampedData, {merge: override});
-      }
-    });
-  }
-
-  async batchUpdate(updates: {id: string; data: Partial<T>}[]): Promise<void> {
-    return admin.firestore().runTransaction(async transaction => {
-      for (const {id, data} of updates) {
-        const docRef = this.collection.doc(id);
+      return admin.firestore().runTransaction(async transaction => {
         const docSnapshot = await transaction.get(docRef);
 
         if (!docSnapshot.exists) {
-          throw new Error(`Document with ID ${id} does not exist`);
+          throw new Error(`Document with ID ${docId} does not exist`);
         }
 
         this.validateTimestampFields(data);
@@ -307,29 +252,136 @@ export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
           docRef,
           timestampedData as admin.firestore.UpdateData<T>
         );
-      }
-    });
+
+        // Fetch the updated document
+        const updatedDocSnapshot = await docRef.get();
+        if (!updatedDocSnapshot.exists) {
+          throw new Error(
+            `Document with ID ${docId} does not exist after update`
+          );
+        }
+
+        return {
+          id: updatedDocSnapshot.id,
+          data: updatedDocSnapshot.data() as T,
+        };
+      });
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
   }
 
-  async batchDelete(docIds: string[]): Promise<void> {
-    return admin.firestore().runTransaction(async transaction => {
-      for (const id of docIds) {
-        const docRef = this.collection.doc(id);
+  async removeDocument(docId: string): Promise<void> {
+    if (this.collection) {
+      const docRef = this.collection.doc(docId);
+
+      return admin.firestore().runTransaction(async transaction => {
         const docSnapshot = await transaction.get(docRef);
 
         if (!docSnapshot.exists) {
-          throw new Error(`Document with ID ${id} does not exist`);
+          throw new Error(`Document with ID ${docId} does not exist`);
         }
 
         transaction.delete(docRef);
-      }
-    });
+      });
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
+  }
+
+  async batchAdd(
+    documents: {id?: string; data: T; override?: boolean}[]
+  ): Promise<void> {
+    if (this.collection) {
+      return admin.firestore().runTransaction(async transaction => {
+        for (const {id, data, override} of documents) {
+          const docId = id || (await this.generateUniqueId(30));
+          const docRef = this.collection!.doc(docId);
+          const docSnapshot = await transaction.get(docRef);
+
+          if (id && !(override || !docSnapshot.exists)) {
+            throw new Error(
+              `Document with ID ${id} already exists. Use "override: true" to replace the data.`
+            );
+          }
+
+          const timestampedData: T = {
+            ...data,
+            createdAt: id
+              ? docSnapshot.data()?.createdAt || this.getUnixTimestamp()
+              : this.getUnixTimestamp(),
+            updatedAt: this.getUnixTimestamp(),
+          };
+
+          transaction.set(docRef, timestampedData, {merge: override});
+        }
+      });
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
+  }
+
+  async batchUpdate(updates: {id: string; data: Partial<T>}[]): Promise<void> {
+    if (this.collection) {
+      return admin.firestore().runTransaction(async transaction => {
+        for (const {id, data} of updates) {
+          const docRef = this.collection!.doc(id);
+          const docSnapshot = await transaction.get(docRef);
+
+          if (!docSnapshot.exists) {
+            throw new Error(`Document with ID ${id} does not exist`);
+          }
+
+          this.validateTimestampFields(data);
+
+          // Prevent updating the document ID
+          if ('id' in data) {
+            throw new Error('Cannot update the document ID');
+          }
+
+          const timestampedData: Partial<T> = {
+            ...data,
+            updatedAt: this.getUnixTimestamp(),
+          };
+
+          transaction.update(
+            docRef,
+            timestampedData as admin.firestore.UpdateData<T>
+          );
+        }
+      });
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
+  }
+
+  async batchDelete(docIds: string[]): Promise<void> {
+    if (this.collection) {
+      return admin.firestore().runTransaction(async transaction => {
+        for (const id of docIds) {
+          const docRef = this.collection!.doc(id);
+          const docSnapshot = await transaction.get(docRef);
+
+          if (!docSnapshot.exists) {
+            throw new Error(`Document with ID ${id} does not exist`);
+          }
+
+          transaction.delete(docRef);
+        }
+      });
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
   }
 
   async getDocument(
     docId: string
   ): Promise<admin.firestore.DocumentSnapshot<T>> {
-    return this.collection.doc(docId).get();
+    if (this.collection) {
+      return this.collection.doc(docId).get();
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
   }
 
   async getDocumentData(docId: string): Promise<{id: string; data: T | null}> {
@@ -342,30 +394,34 @@ export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
     limit = 25,
     startAfterId?: string
   ): Promise<admin.firestore.QuerySnapshot<T>> {
-    let firestoreQuery = query.limit(limit);
+    if (this.collection) {
+      let firestoreQuery = query.limit(limit);
 
-    if (startAfterId) {
-      const startAfterDoc = await this.collection.doc(startAfterId).get();
-      if (!startAfterDoc.exists) {
-        throw new Error(`Document with ID ${startAfterId} does not exist`);
+      if (startAfterId) {
+        const startAfterDoc = await this.collection.doc(startAfterId).get();
+        if (!startAfterDoc.exists) {
+          throw new Error(`Document with ID ${startAfterId} does not exist`);
+        }
+        firestoreQuery = firestoreQuery.startAfter(startAfterDoc);
       }
-      firestoreQuery = firestoreQuery.startAfter(startAfterDoc);
-    }
 
-    try {
-      return await firestoreQuery.get();
-    } catch (error) {
-      if (
-        this.isFirestoreError(error) &&
-        error.code === 'failed-precondition'
-      ) {
-        const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
-        throw new Error(message);
-      } else {
-        throw new Error(
-          `Failed to get documents: ${this.getErrorMessage(error)}`
-        );
+      try {
+        return await firestoreQuery.get();
+      } catch (error) {
+        if (
+          this.isFirestoreError(error) &&
+          error.code === 'failed-precondition'
+        ) {
+          const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
+          throw new Error(message);
+        } else {
+          throw new Error(
+            `Failed to get documents: ${this.getErrorMessage(error)}`
+          );
+        }
       }
+    } else {
+      throw new Error('Please set a collection first using setCollection');
     }
   }
 
@@ -386,61 +442,73 @@ export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
     limit = 25,
     startAfterId?: string
   ): Promise<{id: string; data: T | null}[]> {
-    let query: admin.firestore.Query<T> = this.collection;
+    if (this.collection) {
+      let query: admin.firestore.Query<T> = this.collection;
 
-    filters.forEach(filter => {
-      query = query.where(
-        filter.field as string,
-        filter.operator,
-        filter.value
-      );
-    });
+      filters.forEach(filter => {
+        query = query.where(
+          filter.field as string,
+          filter.operator,
+          filter.value
+        );
+      });
 
-    return this.getDocumentsData(query, limit, startAfterId);
+      return this.getDocumentsData(query, limit, startAfterId);
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
   }
 
   subscribeDocument(
     docId: string,
     callback: (doc: {id: string; data: T}) => void
   ): () => void {
-    return this.collection.doc(docId).onSnapshot(
-      snapshot => {
-        if (!snapshot.exists) {
-          throw new Error(`Document with ID ${docId} does not exist`);
+    if (this.collection) {
+      return this.collection.doc(docId).onSnapshot(
+        snapshot => {
+          if (!snapshot.exists) {
+            throw new Error(`Document with ID ${docId} does not exist`);
+          }
+          callback({id: snapshot.id, data: snapshot.data() as T});
+        },
+        error => {
+          console.error(
+            'Error in collection callback:',
+            this.getErrorMessage(error)
+          );
+          throw error;
         }
-        callback({id: snapshot.id, data: snapshot.data() as T});
-      },
-      error => {
-        console.error(
-          'Error in collection callback:',
-          this.getErrorMessage(error)
-        );
-        throw error;
-      }
-    );
+      );
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
   }
 
   subscribeCollection(
     callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void
   ): () => void {
-    return this.collection.onSnapshot(
-      snapshot => {
-        try {
-          callback(snapshot as admin.firestore.QuerySnapshot<T>);
-        } catch (error) {
-          console.error(
-            'Error in collection callback:',
-            this.getErrorMessage(error)
+    if (this.collection) {
+      return this.collection.onSnapshot(
+        snapshot => {
+          try {
+            callback(snapshot as admin.firestore.QuerySnapshot<T>);
+          } catch (error) {
+            console.error(
+              'Error in collection callback:',
+              this.getErrorMessage(error)
+            );
+            throw error; // Re-throwing to allow higher-level handlers to catch it
+          }
+        },
+        error => {
+          throw new Error(
+            `Failed to subscribe to collection: ${this.getErrorMessage(error)}`
           );
-          throw error; // Re-throwing to allow higher-level handlers to catch it
         }
-      },
-      error => {
-        throw new Error(
-          `Failed to subscribe to collection: ${this.getErrorMessage(error)}`
-        );
-      }
-    );
+      );
+    } else {
+      throw new Error('Please set a collection first using setCollection');
+    }
   }
 
   subscribeQuery(

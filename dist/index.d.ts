@@ -9,8 +9,9 @@ type QueryFilter<T> = {
     value: any;
 };
 export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
+    private firestore;
     private collection;
-    constructor(collectionPath: string, serviceAccountPath: string);
+    constructor(serviceAccountPath: string, collectionPath?: string);
     private validateServiceAccount;
     private handleInitializationError;
     private checkConnection;
@@ -19,6 +20,7 @@ export default class FirestoreAdapter<T extends BaseDocument = BaseDocument> {
     private getUnixTimestamp;
     private validateUnixTimestamp;
     private validateTimestampFields;
+    setCollection(collectionPath: string): this;
     addDocument(data: T, id?: string, override?: boolean): Promise<{
         id: string;
         data: T;
