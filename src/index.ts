@@ -32,7 +32,10 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
   }
 
   private async checkConnection(): Promise<void> {
-    const testDocRef = this.collection.doc('__test__');
+    const testDocRef = this.collection.doc(
+      '__ts_firestore_admin_helper_test_connection__'
+    );
+
     try {
       await testDocRef.get();
     } catch (error) {
