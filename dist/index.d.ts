@@ -10,7 +10,7 @@ type QueryPayload<T> = {
 };
 type QueryOptions<T> = {
     orderBy?: keyof T;
-    orderDirection?: 'ASC' | 'DESC';
+    orderDirection?: 'asc' | 'desc';
     limit?: number;
     startAfterId?: string;
 };

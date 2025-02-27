@@ -215,6 +215,9 @@ class FirestoreHelper {
         return __awaiter(this, void 0, void 0, function* () {
             const findQuery = this.buildQuery(query);
             let firestoreQuery = findQuery;
+            if (options === null || options === void 0 ? void 0 : options.orderBy) {
+                firestoreQuery = firestoreQuery.orderBy(options.orderBy, options.orderDirection || 'asc');
+            }
             if (options === null || options === void 0 ? void 0 : options.limit) {
                 firestoreQuery = firestoreQuery.limit(options.limit);
             }

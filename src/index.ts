@@ -13,7 +13,7 @@ type QueryPayload<T> = {
 
 type QueryOptions<T> = {
   orderBy?: keyof T;
-  orderDirection?: 'ASC' | 'DESC';
+  orderDirection?: 'asc' | 'desc';
   limit?: number;
   startAfterId?: string;
 };
@@ -281,6 +281,13 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
   ): Promise<admin.firestore.QuerySnapshot<T>> {
     const findQuery = this.buildQuery(query);
     let firestoreQuery = findQuery;
+
+    if (options?.orderBy) {
+      firestoreQuery = firestoreQuery.orderBy(
+        options.orderBy as string,
+        options.orderDirection || 'asc'
+      );
+    }
 
     if (options?.limit) {
       firestoreQuery = firestoreQuery.limit(options.limit);
