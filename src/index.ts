@@ -1,16 +1,21 @@
 import * as admin from 'firebase-admin';
 
-// Define a base interface for documents that includes common fields
 interface BaseDocument {
   createdAt?: number; // Unix timestamp
   updatedAt?: number; // Unix timestamp
 }
 
-// Define a type for a query filter where the field must be a key of T
 type QueryPayload<T> = {
   field: keyof T; // Ensures field is a key of T
   operator: FirebaseFirestore.WhereFilterOp;
   value: any;
+};
+
+type QueryOptions<T> = {
+  orderBy?: keyof T;
+  orderDirection?: 'ASC' | 'DESC';
+  limit?: number;
+  startAfterId?: string;
 };
 
 export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
@@ -272,17 +277,26 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
 
   async findDocuments(
     query: QueryPayload<T>[],
-    limit = 25,
-    startAfterId?: string
+    options?: QueryOptions<T>
   ): Promise<admin.firestore.QuerySnapshot<T>> {
     const findQuery = this.buildQuery(query);
-    let firestoreQuery = findQuery.limit(limit);
+    let firestoreQuery = findQuery;
 
-    if (startAfterId) {
-      const startAfterDoc = await this.collection.doc(startAfterId).get();
+    if (options?.limit) {
+      firestoreQuery = firestoreQuery.limit(options.limit);
+    }
+
+    if (options?.startAfterId) {
+      const startAfterDoc = await this.collection
+        .doc(options.startAfterId)
+        .get();
+
       if (!startAfterDoc.exists) {
-        throw new Error(`Document with ID ${startAfterId} does not exist`);
+        throw new Error(
+          `Document with ID ${options.startAfterId} does not exist`
+        );
       }
+
       firestoreQuery = firestoreQuery.startAfter(startAfterDoc);
     }
 
@@ -332,10 +346,27 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
 
   async findDocumentsData(
     query: QueryPayload<T>[],
-    limit = 25,
-    startAfterId?: string
+    options?: QueryOptions<T>
   ): Promise<{id: string; data: T}[]> {
-    const querySnapshot = await this.findDocuments(query, limit, startAfterId);
+    const localOptions: QueryOptions<T> = {};
+
+    if (options?.limit) {
+      localOptions.limit = options.limit;
+    }
+
+    if (options?.orderBy) {
+      localOptions.orderBy = options.orderBy;
+    }
+
+    if (options?.orderDirection) {
+      localOptions.orderDirection = options.orderDirection;
+    }
+
+    if (options?.startAfterId) {
+      localOptions.startAfterId = options.startAfterId;
+    }
+
+    const querySnapshot = await this.findDocuments(query, localOptions);
     return (querySnapshot?.docs || []).map(doc => ({
       id: doc.id,
       data: doc.data() as T,
