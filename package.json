@@ -17,14 +17,17 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 0",
     "lint": "gts lint",
     "clean": "gts clean",
     "fix": "gts fix",
+    "prepublishOnly": "npm run build && npm run lint",
     "posttest": "npm run lint"
   },
   "engines": {
     "node": ">=18"
   },
+  "engineStrict": true,
   "keywords": [
     "firestore",
     "firebase",

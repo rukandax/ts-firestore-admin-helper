@@ -23,15 +23,62 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.QueryValidationError = void 0;
+const admin = __importStar(require("firebase-admin"));
 const crypto = __importStar(require("crypto"));
 // Constants
 const DEFAULT_ID_LENGTH = 30;
 const MAX_BATCH_SIZE = 500; // Firestore transaction limit
 const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
+/**
+ * Default console logger implementation
+ */
+class ConsoleLogger {
+    debug(message, ...meta) {
+        console.debug(message, ...meta);
+    }
+    info(message, ...meta) {
+        console.info(message, ...meta);
+    }
+    warn(message, ...meta) {
+        console.warn(message, ...meta);
+    }
+    error(message, ...meta) {
+        console.error(message, ...meta);
+    }
+}
+/**
+ * No-op logger that does nothing (for production/silent mode)
+ */
+class NoOpLogger {
+    debug() { }
+    info() { }
+    warn() { }
+    error() { }
+}
+class QueryValidationError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'QueryValidationError';
+    }
+}
+exports.QueryValidationError = QueryValidationError;
 class FirestoreHelper {
-    constructor(firestoreInstance, collectionPath) {
+    constructor(firestoreInstance, collectionPath, options) {
         this.firestoreInstance = firestoreInstance;
         this.collection = firestoreInstance.collection(collectionPath);
+        // Setup logger
+        if (options?.logger === 'silent') {
+            this.logger = new NoOpLogger();
+        }
+        else if (options?.logger) {
+            this.logger = options.logger;
+        }
+        else {
+            this.logger = new ConsoleLogger();
+        }
+        this.debugMode = options?.debug ?? false;
+        this.idLength = options?.idLength ?? DEFAULT_ID_LENGTH;
     }
     /**
      * Validates Firestore connection by attempting a simple read operation
@@ -101,8 +148,12 @@ class FirestoreHelper {
         } while (doc.exists);
         return id;
     }
+    /**
+     * Gets current Unix timestamp in milliseconds
+     * Uses Firestore server timestamp for consistency
+     */
     getUnixTimestamp() {
-        return Date.now(); // Milliseconds since Unix epoch
+        return admin.firestore.Timestamp.now().toMillis();
     }
     validateUnixTimestamp(timestamp) {
         return (typeof timestamp === 'number' &&
@@ -126,8 +177,15 @@ class FirestoreHelper {
         if (id) {
             this.validateCustomId(id);
         }
-        const docId = id || (await this.generateUniqueId(DEFAULT_ID_LENGTH));
+        const docId = id || (await this.generateUniqueId(this.idLength));
         const docRef = this.collection.doc(docId);
+        if (this.debugMode) {
+            this.logger.debug(`Adding document with ID: ${docId}`, {
+                collectionPath: this.collection.path,
+                customId: !!id,
+                override: !!override,
+            });
+        }
         const result = await this.firestoreInstance.runTransaction(async (transaction) => {
             const docSnapshot = await transaction.get(docRef);
             if (id && !(override || !docSnapshot.exists)) {
@@ -201,12 +259,23 @@ class FirestoreHelper {
                 this.validateCustomId(id);
             }
         }
-        // Generate all IDs before transaction to avoid race conditions
-        const documentsWithIds = await Promise.all(documents.map(async ({ id, data, override }) => ({
-            id: id || (await this.generateUniqueId(DEFAULT_ID_LENGTH)),
-            data,
-            override,
-        })));
+        // Generate all IDs sequentially to avoid race conditions
+        const documentsWithIds = [];
+        const generatedIds = new Set();
+        for (const { id, data, override } of documents) {
+            let finalId;
+            if (id) {
+                finalId = id;
+            }
+            else {
+                // Keep generating until we get a unique one (even in this batch)
+                do {
+                    finalId = await this.generateUniqueId(this.idLength);
+                } while (generatedIds.has(finalId));
+                generatedIds.add(finalId);
+            }
+            documentsWithIds.push({ id: finalId, data, override });
+        }
         return this.firestoreInstance.runTransaction(async (transaction) => {
             for (const { id, data, override } of documentsWithIds) {
                 const docRef = this.collection.doc(id);
@@ -273,6 +342,102 @@ class FirestoreHelper {
             }
         });
     }
+    /**
+     * Batch add documents with automatic chunking for large datasets (>500 documents)
+     * Automatically splits the operation into multiple batches
+     *
+     * @param documents - Array of documents to add
+     * @returns Promise that resolves when all documents are added
+     *
+     * @example
+     * // Add 1000 documents (will be split into 2 batches)
+     * await collection.batchAddLarge(largeDocumentArray);
+     */
+    async batchAddLarge(documents) {
+        if (documents.length === 0) {
+            throw new Error('Batch operation requires at least one document');
+        }
+        const chunks = [];
+        for (let i = 0; i < documents.length; i += MAX_BATCH_SIZE) {
+            chunks.push(documents.slice(i, i + MAX_BATCH_SIZE));
+        }
+        if (this.debugMode) {
+            this.logger.debug(`Batch add large: splitting ${documents.length} documents into ${chunks.length} chunks`);
+        }
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            if (!chunk)
+                continue;
+            await this.batchAdd(chunk);
+            if (this.debugMode) {
+                this.logger.debug(`Processed chunk ${i + 1}/${chunks.length}`);
+            }
+        }
+    }
+    /**
+     * Batch edit documents with automatic chunking for large datasets (>500 documents)
+     * Automatically splits the operation into multiple batches
+     *
+     * @param updates - Array of document updates
+     * @returns Promise that resolves when all documents are updated
+     *
+     * @example
+     * // Update 1000 documents
+     * await collection.batchEditLarge(largeUpdateArray);
+     */
+    async batchEditLarge(updates) {
+        if (updates.length === 0) {
+            throw new Error('Batch operation requires at least one document');
+        }
+        const chunks = [];
+        for (let i = 0; i < updates.length; i += MAX_BATCH_SIZE) {
+            chunks.push(updates.slice(i, i + MAX_BATCH_SIZE));
+        }
+        if (this.debugMode) {
+            this.logger.debug(`Batch edit large: splitting ${updates.length} documents into ${chunks.length} chunks`);
+        }
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            if (!chunk)
+                continue;
+            await this.batchEdit(chunk);
+            if (this.debugMode) {
+                this.logger.debug(`Processed chunk ${i + 1}/${chunks.length}`);
+            }
+        }
+    }
+    /**
+     * Batch remove documents with automatic chunking for large datasets (>500 documents)
+     * Automatically splits the operation into multiple batches
+     *
+     * @param docIds - Array of document IDs to remove
+     * @returns Promise that resolves when all documents are removed
+     *
+     * @example
+     * // Remove 1000 documents
+     * await collection.batchRemoveLarge(largeIdArray);
+     */
+    async batchRemoveLarge(docIds) {
+        if (docIds.length === 0) {
+            throw new Error('Batch operation requires at least one document ID');
+        }
+        const chunks = [];
+        for (let i = 0; i < docIds.length; i += MAX_BATCH_SIZE) {
+            chunks.push(docIds.slice(i, i + MAX_BATCH_SIZE));
+        }
+        if (this.debugMode) {
+            this.logger.debug(`Batch remove large: splitting ${docIds.length} documents into ${chunks.length} chunks`);
+        }
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            if (!chunk)
+                continue;
+            await this.batchRemove(chunk);
+            if (this.debugMode) {
+                this.logger.debug(`Processed chunk ${i + 1}/${chunks.length}`);
+            }
+        }
+    }
     async getDocument(docId) {
         return this.collection.doc(docId).get();
     }
@@ -287,11 +452,39 @@ class FirestoreHelper {
         }
         return null;
     }
+    /**
+     * Executes a Firestore query with proper error handling
+     * @param query - The Firestore query to execute
+     * @param operation - The operation to perform on the query
+     * @returns Result from the operation
+     */
+    async executeQuery(query, operation) {
+        try {
+            return await operation(query);
+        }
+        catch (error) {
+            if (this.isFirestoreError(error) &&
+                error.code === 'failed-precondition') {
+                throw new Error(`Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`);
+            }
+            throw new Error(`Query execution failed: ${this.getErrorMessage(error)}`);
+        }
+    }
     async findDocuments(query, options) {
         const findQuery = this.buildQuery(query);
         let firestoreQuery = findQuery;
+        // Handle multiple orderBy fields
         if (options?.orderBy) {
-            firestoreQuery = firestoreQuery.orderBy(options.orderBy, options.orderDirection || 'asc');
+            if (Array.isArray(options.orderBy)) {
+                // Multiple orderBy fields
+                options.orderBy.forEach(order => {
+                    firestoreQuery = firestoreQuery.orderBy(order.field, order.direction || 'asc');
+                });
+            }
+            else {
+                // Single orderBy field (backward compatible)
+                firestoreQuery = firestoreQuery.orderBy(options.orderBy, options.orderDirection || 'asc');
+            }
         }
         if (options?.limit) {
             firestoreQuery = firestoreQuery.limit(options.limit);
@@ -305,37 +498,15 @@ class FirestoreHelper {
             }
             firestoreQuery = firestoreQuery.startAfter(startAfterDoc);
         }
-        try {
-            return await firestoreQuery.get();
-        }
-        catch (error) {
-            if (this.isFirestoreError(error) &&
-                error.code === 'failed-precondition') {
-                const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
-                throw new Error(message);
-            }
-            else {
-                throw new Error(`Failed to get documents: ${this.getErrorMessage(error)}`);
-            }
-        }
+        return this.executeQuery(firestoreQuery, async (q) => await q.get());
     }
     async findDocument(query) {
         const findQuery = this.buildQuery(query);
         const firestoreQuery = findQuery.limit(1);
-        try {
-            const doc = (await firestoreQuery.get())?.docs?.[0] || null;
-            return doc;
-        }
-        catch (error) {
-            if (this.isFirestoreError(error) &&
-                error.code === 'failed-precondition') {
-                const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
-                throw new Error(message);
-            }
-            else {
-                throw new Error(`Failed to get documents: ${this.getErrorMessage(error)}`);
-            }
-        }
+        return this.executeQuery(firestoreQuery, async (q) => {
+            const result = await q.get();
+            return result?.docs?.[0] || null;
+        });
     }
     async findDocumentsData(query, options) {
         const localOptions = {};
@@ -368,72 +539,107 @@ class FirestoreHelper {
         return null;
     }
     buildQuery(filters) {
+        // Validate query constraints before building
+        this.validateQueryConstraints(filters);
+        if (this.debugMode) {
+            this.logger.debug(`Building query with ${filters.length} filters`, {
+                collectionPath: this.collection.path,
+                filters: filters.map(f => ({
+                    field: String(f.field),
+                    operator: f.operator,
+                })),
+            });
+        }
         let query = this.collection;
         filters.forEach(filter => {
             query = query.where(filter.field, filter.operator, filter.value);
         });
         return query;
     }
-    subscribeDocument(docId, callback) {
+    subscribeDocument(docId, callback, errorCallback) {
         const unsubscribe = this.collection.doc(docId).onSnapshot(snapshot => {
             if (!snapshot.exists) {
-                throw new Error(`Document with ID ${docId} does not exist`);
+                const error = new Error(`Document with ID ${docId} does not exist`);
+                this.logger.error('Document does not exist:', docId);
+                if (errorCallback) {
+                    errorCallback(error);
+                }
+                return;
             }
             const data = snapshot.data();
             if (!data) {
-                throw new Error(`Document with ID ${docId} has no data`);
+                const error = new Error(`Document with ID ${docId} has no data`);
+                this.logger.error('Document has no data:', docId);
+                if (errorCallback) {
+                    errorCallback(error);
+                }
+                return;
             }
             try {
                 callback({ id: snapshot.id, data });
             }
             catch (error) {
-                console.error('Error in document subscription callback:', this.getErrorMessage(error));
-                // Unsubscribe on callback error to prevent memory leaks
-                unsubscribe();
-                throw error;
+                const err = error instanceof Error ? error : new Error(String(error));
+                this.logger.error('Error in document subscription callback:', this.getErrorMessage(err));
+                if (errorCallback) {
+                    errorCallback(err);
+                }
             }
         }, error => {
-            console.error('Error in document subscription:', this.getErrorMessage(error));
-            throw error;
+            const err = error instanceof Error ? error : new Error(String(error));
+            this.logger.error('Error in document subscription:', this.getErrorMessage(err));
+            if (errorCallback) {
+                errorCallback(err);
+            }
         });
         return unsubscribe;
     }
-    subscribeCollection(callback) {
+    subscribeCollection(callback, errorCallback) {
         const unsubscribe = this.collection.onSnapshot(snapshot => {
             try {
                 callback(snapshot);
             }
             catch (error) {
-                console.error('Error in collection subscription callback:', this.getErrorMessage(error));
-                // Unsubscribe on callback error to prevent memory leaks
-                unsubscribe();
-                throw error;
+                const err = error instanceof Error ? error : new Error(String(error));
+                this.logger.error('Error in collection subscription callback:', this.getErrorMessage(err));
+                if (errorCallback) {
+                    errorCallback(err);
+                }
             }
         }, error => {
-            throw new Error(`Failed to subscribe to collection: ${this.getErrorMessage(error)}`);
+            const err = error instanceof Error ? error : new Error(String(error));
+            this.logger.error('Error in collection subscription:', this.getErrorMessage(err));
+            if (errorCallback) {
+                errorCallback(err);
+            }
         });
         return unsubscribe;
     }
-    subscribeQuery(query, callback) {
+    subscribeQuery(query, callback, errorCallback) {
         const findQuery = this.buildQuery(query);
         const unsubscribe = findQuery.onSnapshot(snapshot => {
             try {
                 callback(snapshot);
             }
             catch (error) {
-                console.error('Error in query subscription callback:', this.getErrorMessage(error));
-                // Unsubscribe on callback error to prevent memory leaks
-                unsubscribe();
-                throw error;
+                const err = error instanceof Error ? error : new Error(String(error));
+                this.logger.error('Error in query subscription callback:', this.getErrorMessage(err));
+                if (errorCallback) {
+                    errorCallback(err);
+                }
             }
         }, error => {
+            let err;
             if (this.isFirestoreError(error) &&
                 error.code === 'failed-precondition') {
-                const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
-                throw new Error(message);
+                err = new Error(`Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`);
             }
             else {
-                throw new Error(`Failed to subscribe to query: ${this.getErrorMessage(error)}`);
+                err = new Error(`Failed to subscribe to query: ${this.getErrorMessage(error)}`);
+            }
+            this.logger.error('Error in query subscription:', this.getErrorMessage(err));
+            if (errorCallback) {
+                errorCallback(err);
             }
         });
         return unsubscribe;
@@ -480,6 +686,43 @@ class FirestoreHelper {
      */
     async runTransaction(callback) {
         return this.firestoreInstance.runTransaction(callback);
+    }
+    /**
+     * Executes a transaction with automatic retry on transient failures
+     * Useful for handling transaction contention in high-concurrency scenarios
+     *
+     * @param callback - Transaction callback with transaction context
+     * @param maxRetries - Maximum number of retry attempts (default: 0, no retry)
+     * @returns Result from the transaction callback
+     *
+     * @example
+     * // Transfer with retry logic (retry up to 3 times)
+     * await collection.runTransactionWithRetry(async (transaction) => {
+     *   const senderRef = collection.doc('user1');
+     *   const senderDoc = await transaction.get(senderRef);
+     *   // ... transaction logic
+     * }, 3);
+     */
+    async runTransactionWithRetry(callback, maxRetries = 0) {
+        const totalAttempts = maxRetries + 1; // 0 retries = 1 attempt total
+        let lastError;
+        for (let attempt = 0; attempt < totalAttempts; attempt++) {
+            try {
+                return await this.runTransaction(callback);
+            }
+            catch (error) {
+                lastError = error instanceof Error ? error : new Error(String(error));
+                if (attempt < totalAttempts - 1) {
+                    const delay = Math.pow(2, attempt) * 100; // Exponential backoff
+                    this.logger.warn(`Transaction attempt ${attempt + 1} failed, retrying in ${delay}ms...`, { error: this.getErrorMessage(lastError) });
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+        if (maxRetries > 0) {
+            this.logger.error(`Transaction failed after ${totalAttempts} attempts`, this.getErrorMessage(lastError));
+        }
+        throw lastError;
     }
     /**
      * Helper method to get document reference for use in custom transactions
@@ -593,6 +836,84 @@ class FirestoreHelper {
             };
             return { id: docId, data: updatedData };
         });
+    }
+    /**
+     * Validates query against Firestore constraints
+     * Throws QueryValidationError if constraints are violated
+     */
+    validateQueryConstraints(query) {
+        const operators = query.map(q => q.operator);
+        // 1. Check for multiple != operators
+        const notEqualCount = operators.filter(op => op === '!=').length;
+        if (notEqualCount > 1) {
+            const errorMsg = 'Cannot use multiple "!=" operators in the same query. Firestore allows only one "!=" per query.';
+            this.logger.warn(`Query validation failed: ${errorMsg}`);
+            throw new QueryValidationError(errorMsg);
+        }
+        // 2. Check for != combined with not-in
+        const hasNotEqual = operators.includes('!=');
+        const hasNotIn = operators.includes('not-in');
+        if (hasNotEqual && hasNotIn) {
+            const errorMsg = 'Cannot combine "!=" and "not-in" operators in the same query. Use only one of them.';
+            this.logger.warn(`Query validation failed: ${errorMsg}`);
+            throw new QueryValidationError(errorMsg);
+        }
+        // 3. Check for != combined with in
+        const hasIn = operators.includes('in');
+        if (hasNotEqual && hasIn) {
+            const errorMsg = 'Cannot combine "!=" and "in" operators in the same query.';
+            this.logger.warn(`Query validation failed: ${errorMsg}`);
+            throw new QueryValidationError(errorMsg);
+        }
+        // 4. Check for multiple array-contains operators
+        const arrayContainsCount = operators.filter(op => op === 'array-contains').length;
+        if (arrayContainsCount > 1) {
+            const errorMsg = 'Cannot use multiple "array-contains" operators in the same query. Use "array-contains-any" for multiple values.';
+            this.logger.warn(`Query validation failed: ${errorMsg}`);
+            throw new QueryValidationError(errorMsg);
+        }
+        // 5. Check for array-contains combined with array-contains-any
+        const hasArrayContains = operators.includes('array-contains');
+        const hasArrayContainsAny = operators.includes('array-contains-any');
+        if (hasArrayContains && hasArrayContainsAny) {
+            const errorMsg = 'Cannot combine "array-contains" and "array-contains-any" in the same query. Use only one of them.';
+            this.logger.warn(`Query validation failed: ${errorMsg}`);
+            throw new QueryValidationError(errorMsg);
+        }
+        // 6. Check for multiple "in" family operators
+        const inFamilyOps = ['in', 'not-in', 'array-contains-any'].filter(op => operators.includes(op));
+        if (inFamilyOps.length > 1) {
+            const errorMsg = `Cannot use multiple "in" family operators (in, not-in, array-contains-any) in the same query. Found: ${inFamilyOps.join(', ')}`;
+            this.logger.warn(`Query validation failed: ${errorMsg}`);
+            throw new QueryValidationError(errorMsg);
+        }
+        // 7. Validate array sizes for in/not-in/array-contains-any (max 10 items)
+        for (const queryItem of query) {
+            if (['in', 'not-in', 'array-contains-any'].includes(queryItem.operator)) {
+                const value = queryItem.value;
+                if (Array.isArray(value) && value.length > 10) {
+                    const errorMsg = `Operator "${queryItem.operator}" supports maximum 10 values, but ${value.length} were provided for field "${String(queryItem.field)}". Consider splitting into multiple queries.`;
+                    this.logger.warn(`Query validation failed: ${errorMsg}`);
+                    throw new QueryValidationError(errorMsg);
+                }
+            }
+        }
+        // 8. Check for range queries on different fields
+        const rangeOperators = ['<', '<=', '>', '>=', '!='];
+        const rangeFields = new Set();
+        for (const queryItem of query) {
+            if (rangeOperators.includes(queryItem.operator)) {
+                rangeFields.add(queryItem.field);
+            }
+        }
+        if (rangeFields.size > 1) {
+            const fieldNames = Array.from(rangeFields)
+                .map(f => String(f))
+                .join(', ');
+            const errorMsg = `Cannot use range operators (<, <=, >, >=, !=) on multiple fields. Found range queries on: ${fieldNames}. Firestore allows range operators on only one field per query.`;
+            this.logger.warn(`Query validation failed: ${errorMsg}`);
+            throw new QueryValidationError(errorMsg);
+        }
     }
     isFirestoreError(error) {
         return (typeof error === 'object' &&

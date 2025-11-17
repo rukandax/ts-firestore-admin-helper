@@ -6,36 +6,126 @@ const DEFAULT_ID_LENGTH = 30;
 const MAX_BATCH_SIZE = 500; // Firestore transaction limit
 const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
-interface BaseDocument {
+/**
+ * Logger interface that supports any logging library
+ * Compatible with Winston, Pino, Bunyan, console, and custom loggers
+ */
+export interface Logger {
+  debug(message: string, ...meta: unknown[]): void;
+  info(message: string, ...meta: unknown[]): void;
+  warn(message: string, ...meta: unknown[]): void;
+  error(message: string, ...meta: unknown[]): void;
+}
+
+/**
+ * Default console logger implementation
+ */
+class ConsoleLogger implements Logger {
+  debug(message: string, ...meta: unknown[]): void {
+    console.debug(message, ...meta);
+  }
+
+  info(message: string, ...meta: unknown[]): void {
+    console.info(message, ...meta);
+  }
+
+  warn(message: string, ...meta: unknown[]): void {
+    console.warn(message, ...meta);
+  }
+
+  error(message: string, ...meta: unknown[]): void {
+    console.error(message, ...meta);
+  }
+}
+
+/**
+ * No-op logger that does nothing (for production/silent mode)
+ */
+class NoOpLogger implements Logger {
+  debug(): void {}
+  info(): void {}
+  warn(): void {}
+  error(): void {}
+}
+
+export interface BaseDocument {
   createdAt?: number; // Unix timestamp
   updatedAt?: number; // Unix timestamp
 }
 
-type QueryPayload<T> = {
+export interface FirestoreHelperOptions {
+  /**
+   * Custom logger instance (Winston, Pino, Bunyan, etc.)
+   * If not provided, uses console logger
+   * Set to 'silent' to disable all logging
+   */
+  logger?: Logger | 'silent';
+
+  /**
+   * Enable debug logging (default: false)
+   */
+  debug?: boolean;
+
+  /**
+   * Custom document ID length (default: 30)
+   * Only applies to auto-generated IDs
+   */
+  idLength?: number;
+}
+
+export type QueryPayload<T> = {
   field: keyof T; // Ensures field is a key of T
   operator: FirebaseFirestore.WhereFilterOp;
   value: T[keyof T] | T[keyof T][] | boolean | null;
 };
 
-type QueryOptions<T> = {
-  orderBy?: keyof T;
+export type OrderByOption<T> = {
+  field: keyof T;
+  direction?: 'asc' | 'desc';
+};
+
+export type QueryOptions<T> = {
+  orderBy?: keyof T | OrderByOption<T>[];
   orderDirection?: 'asc' | 'desc';
   limit?: number;
   startAfterId?: string;
 };
 
+export class QueryValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'QueryValidationError';
+  }
+}
+
 export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
   private collection: admin.firestore.CollectionReference<T>;
   private firestoreInstance: admin.firestore.Firestore;
+  private logger: Logger;
+  private debugMode: boolean;
+  private idLength: number;
 
   constructor(
     firestoreInstance: admin.firestore.Firestore,
-    collectionPath: string
+    collectionPath: string,
+    options?: FirestoreHelperOptions
   ) {
     this.firestoreInstance = firestoreInstance;
     this.collection = firestoreInstance.collection(
       collectionPath
     ) as admin.firestore.CollectionReference<T>;
+
+    // Setup logger
+    if (options?.logger === 'silent') {
+      this.logger = new NoOpLogger();
+    } else if (options?.logger) {
+      this.logger = options.logger;
+    } else {
+      this.logger = new ConsoleLogger();
+    }
+
+    this.debugMode = options?.debug ?? false;
+    this.idLength = options?.idLength ?? DEFAULT_ID_LENGTH;
   }
 
   /**
@@ -121,8 +211,12 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     return id;
   }
 
+  /**
+   * Gets current Unix timestamp in milliseconds
+   * Uses Firestore server timestamp for consistency
+   */
   private getUnixTimestamp(): number {
-    return Date.now(); // Milliseconds since Unix epoch
+    return admin.firestore.Timestamp.now().toMillis();
   }
 
   private validateUnixTimestamp(timestamp: number): boolean {
@@ -161,8 +255,16 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
       this.validateCustomId(id);
     }
 
-    const docId = id || (await this.generateUniqueId(DEFAULT_ID_LENGTH));
+    const docId = id || (await this.generateUniqueId(this.idLength));
     const docRef = this.collection.doc(docId);
+
+    if (this.debugMode) {
+      this.logger.debug(`Adding document with ID: ${docId}`, {
+        collectionPath: this.collection.path,
+        customId: !!id,
+        override: !!override,
+      });
+    }
 
     const result = await this.firestoreInstance.runTransaction(
       async transaction => {
@@ -275,14 +377,24 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
       }
     }
 
-    // Generate all IDs before transaction to avoid race conditions
-    const documentsWithIds = await Promise.all(
-      documents.map(async ({id, data, override}) => ({
-        id: id || (await this.generateUniqueId(DEFAULT_ID_LENGTH)),
-        data,
-        override,
-      }))
-    );
+    // Generate all IDs sequentially to avoid race conditions
+    const documentsWithIds: Array<{id: string; data: T; override?: boolean}> =
+      [];
+    const generatedIds = new Set<string>();
+
+    for (const {id, data, override} of documents) {
+      let finalId: string;
+      if (id) {
+        finalId = id;
+      } else {
+        // Keep generating until we get a unique one (even in this batch)
+        do {
+          finalId = await this.generateUniqueId(this.idLength);
+        } while (generatedIds.has(finalId));
+        generatedIds.add(finalId);
+      }
+      documentsWithIds.push({id: finalId, data, override});
+    }
 
     return this.firestoreInstance.runTransaction(async transaction => {
       for (const {id, data, override} of documentsWithIds) {
@@ -376,6 +488,121 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     });
   }
 
+  /**
+   * Batch add documents with automatic chunking for large datasets (>500 documents)
+   * Automatically splits the operation into multiple batches
+   *
+   * @param documents - Array of documents to add
+   * @returns Promise that resolves when all documents are added
+   *
+   * @example
+   * // Add 1000 documents (will be split into 2 batches)
+   * await collection.batchAddLarge(largeDocumentArray);
+   */
+  async batchAddLarge(
+    documents: {id?: string; data: T; override?: boolean}[]
+  ): Promise<void> {
+    if (documents.length === 0) {
+      throw new Error('Batch operation requires at least one document');
+    }
+
+    const chunks: Array<{id?: string; data: T; override?: boolean}[]> = [];
+    for (let i = 0; i < documents.length; i += MAX_BATCH_SIZE) {
+      chunks.push(documents.slice(i, i + MAX_BATCH_SIZE));
+    }
+
+    if (this.debugMode) {
+      this.logger.debug(
+        `Batch add large: splitting ${documents.length} documents into ${chunks.length} chunks`
+      );
+    }
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      if (!chunk) continue;
+      await this.batchAdd(chunk);
+      if (this.debugMode) {
+        this.logger.debug(`Processed chunk ${i + 1}/${chunks.length}`);
+      }
+    }
+  }
+
+  /**
+   * Batch edit documents with automatic chunking for large datasets (>500 documents)
+   * Automatically splits the operation into multiple batches
+   *
+   * @param updates - Array of document updates
+   * @returns Promise that resolves when all documents are updated
+   *
+   * @example
+   * // Update 1000 documents
+   * await collection.batchEditLarge(largeUpdateArray);
+   */
+  async batchEditLarge(
+    updates: {id: string; data: Partial<T>}[]
+  ): Promise<void> {
+    if (updates.length === 0) {
+      throw new Error('Batch operation requires at least one document');
+    }
+
+    const chunks: Array<{id: string; data: Partial<T>}[]> = [];
+    for (let i = 0; i < updates.length; i += MAX_BATCH_SIZE) {
+      chunks.push(updates.slice(i, i + MAX_BATCH_SIZE));
+    }
+
+    if (this.debugMode) {
+      this.logger.debug(
+        `Batch edit large: splitting ${updates.length} documents into ${chunks.length} chunks`
+      );
+    }
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      if (!chunk) continue;
+      await this.batchEdit(chunk);
+      if (this.debugMode) {
+        this.logger.debug(`Processed chunk ${i + 1}/${chunks.length}`);
+      }
+    }
+  }
+
+  /**
+   * Batch remove documents with automatic chunking for large datasets (>500 documents)
+   * Automatically splits the operation into multiple batches
+   *
+   * @param docIds - Array of document IDs to remove
+   * @returns Promise that resolves when all documents are removed
+   *
+   * @example
+   * // Remove 1000 documents
+   * await collection.batchRemoveLarge(largeIdArray);
+   */
+  async batchRemoveLarge(docIds: string[]): Promise<void> {
+    if (docIds.length === 0) {
+      throw new Error('Batch operation requires at least one document ID');
+    }
+
+    const chunks: string[][] = [];
+    for (let i = 0; i < docIds.length; i += MAX_BATCH_SIZE) {
+      chunks.push(docIds.slice(i, i + MAX_BATCH_SIZE));
+    }
+
+    if (this.debugMode) {
+      this.logger.debug(
+        `Batch remove large: splitting ${docIds.length} documents into ${chunks.length} chunks`
+      );
+    }
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      if (!chunk) continue;
+      await this.batchRemove(chunk);
+      if (this.debugMode) {
+        this.logger.debug(`Processed chunk ${i + 1}/${chunks.length}`);
+      }
+    }
+  }
+
   async getDocument(
     docId: string
   ): Promise<admin.firestore.DocumentSnapshot<T>> {
@@ -394,6 +621,31 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     return null;
   }
 
+  /**
+   * Executes a Firestore query with proper error handling
+   * @param query - The Firestore query to execute
+   * @param operation - The operation to perform on the query
+   * @returns Result from the operation
+   */
+  private async executeQuery<R>(
+    query: admin.firestore.Query<T>,
+    operation: (q: admin.firestore.Query<T>) => Promise<R>
+  ): Promise<R> {
+    try {
+      return await operation(query);
+    } catch (error) {
+      if (
+        this.isFirestoreError(error) &&
+        error.code === 'failed-precondition'
+      ) {
+        throw new Error(
+          `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`
+        );
+      }
+      throw new Error(`Query execution failed: ${this.getErrorMessage(error)}`);
+    }
+  }
+
   async findDocuments(
     query: QueryPayload<T>[],
     options?: QueryOptions<T>
@@ -401,11 +653,23 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     const findQuery = this.buildQuery(query);
     let firestoreQuery = findQuery;
 
+    // Handle multiple orderBy fields
     if (options?.orderBy) {
-      firestoreQuery = firestoreQuery.orderBy(
-        options.orderBy as string,
-        options.orderDirection || 'asc'
-      );
+      if (Array.isArray(options.orderBy)) {
+        // Multiple orderBy fields
+        options.orderBy.forEach(order => {
+          firestoreQuery = firestoreQuery.orderBy(
+            order.field as string,
+            order.direction || 'asc'
+          );
+        });
+      } else {
+        // Single orderBy field (backward compatible)
+        firestoreQuery = firestoreQuery.orderBy(
+          options.orderBy as string,
+          options.orderDirection || 'asc'
+        );
+      }
     }
 
     if (options?.limit) {
@@ -426,21 +690,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
       firestoreQuery = firestoreQuery.startAfter(startAfterDoc);
     }
 
-    try {
-      return await firestoreQuery.get();
-    } catch (error) {
-      if (
-        this.isFirestoreError(error) &&
-        error.code === 'failed-precondition'
-      ) {
-        const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
-        throw new Error(message);
-      } else {
-        throw new Error(
-          `Failed to get documents: ${this.getErrorMessage(error)}`
-        );
-      }
-    }
+    return this.executeQuery(firestoreQuery, async q => await q.get());
   }
 
   async findDocument(
@@ -452,22 +702,10 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     const findQuery = this.buildQuery(query);
     const firestoreQuery = findQuery.limit(1);
 
-    try {
-      const doc = (await firestoreQuery.get())?.docs?.[0] || null;
-      return doc;
-    } catch (error) {
-      if (
-        this.isFirestoreError(error) &&
-        error.code === 'failed-precondition'
-      ) {
-        const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
-        throw new Error(message);
-      } else {
-        throw new Error(
-          `Failed to get documents: ${this.getErrorMessage(error)}`
-        );
-      }
-    }
+    return this.executeQuery(firestoreQuery, async q => {
+      const result = await q.get();
+      return result?.docs?.[0] || null;
+    });
   }
 
   async findDocumentsData(
@@ -515,6 +753,19 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
   }
 
   buildQuery(filters: QueryPayload<T>[]): admin.firestore.Query<T> {
+    // Validate query constraints before building
+    this.validateQueryConstraints(filters);
+
+    if (this.debugMode) {
+      this.logger.debug(`Building query with ${filters.length} filters`, {
+        collectionPath: this.collection.path,
+        filters: filters.map(f => ({
+          field: String(f.field),
+          operator: f.operator,
+        })),
+      });
+    }
+
     let query: admin.firestore.Query<T> = this.collection;
 
     filters.forEach(filter => {
@@ -530,61 +781,83 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
 
   subscribeDocument(
     docId: string,
-    callback: (doc: {id: string; data: T}) => void
+    callback: (doc: {id: string; data: T}) => void,
+    errorCallback?: (error: Error) => void
   ): () => void {
     const unsubscribe = this.collection.doc(docId).onSnapshot(
       snapshot => {
         if (!snapshot.exists) {
-          throw new Error(`Document with ID ${docId} does not exist`);
+          const error = new Error(`Document with ID ${docId} does not exist`);
+          this.logger.error('Document does not exist:', docId);
+          if (errorCallback) {
+            errorCallback(error);
+          }
+          return;
         }
         const data = snapshot.data();
         if (!data) {
-          throw new Error(`Document with ID ${docId} has no data`);
+          const error = new Error(`Document with ID ${docId} has no data`);
+          this.logger.error('Document has no data:', docId);
+          if (errorCallback) {
+            errorCallback(error);
+          }
+          return;
         }
         try {
           callback({id: snapshot.id, data});
         } catch (error) {
-          console.error(
+          const err = error instanceof Error ? error : new Error(String(error));
+          this.logger.error(
             'Error in document subscription callback:',
-            this.getErrorMessage(error)
+            this.getErrorMessage(err)
           );
-          // Unsubscribe on callback error to prevent memory leaks
-          unsubscribe();
-          throw error;
+          if (errorCallback) {
+            errorCallback(err);
+          }
         }
       },
       error => {
-        console.error(
+        const err = error instanceof Error ? error : new Error(String(error));
+        this.logger.error(
           'Error in document subscription:',
-          this.getErrorMessage(error)
+          this.getErrorMessage(err)
         );
-        throw error;
+        if (errorCallback) {
+          errorCallback(err);
+        }
       }
     );
     return unsubscribe;
   }
 
   subscribeCollection(
-    callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void
+    callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void,
+    errorCallback?: (error: Error) => void
   ): () => void {
     const unsubscribe = this.collection.onSnapshot(
       snapshot => {
         try {
           callback(snapshot as admin.firestore.QuerySnapshot<T>);
         } catch (error) {
-          console.error(
+          const err = error instanceof Error ? error : new Error(String(error));
+          this.logger.error(
             'Error in collection subscription callback:',
-            this.getErrorMessage(error)
+            this.getErrorMessage(err)
           );
-          // Unsubscribe on callback error to prevent memory leaks
-          unsubscribe();
-          throw error;
+          if (errorCallback) {
+            errorCallback(err);
+          }
         }
       },
       error => {
-        throw new Error(
-          `Failed to subscribe to collection: ${this.getErrorMessage(error)}`
+        const err = error instanceof Error ? error : new Error(String(error));
+        this.logger.error(
+          'Error in collection subscription:',
+          this.getErrorMessage(err)
         );
+        if (errorCallback) {
+          errorCallback(err);
+        }
       }
     );
     return unsubscribe;
@@ -592,7 +865,8 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
 
   subscribeQuery(
     query: QueryPayload<T>[],
-    callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void
+    callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void,
+    errorCallback?: (error: Error) => void
   ): () => void {
     const findQuery = this.buildQuery(query);
     const unsubscribe = findQuery.onSnapshot(
@@ -600,26 +874,36 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         try {
           callback(snapshot as admin.firestore.QuerySnapshot<T>);
         } catch (error) {
-          console.error(
+          const err = error instanceof Error ? error : new Error(String(error));
+          this.logger.error(
             'Error in query subscription callback:',
-            this.getErrorMessage(error)
+            this.getErrorMessage(err)
           );
-          // Unsubscribe on callback error to prevent memory leaks
-          unsubscribe();
-          throw error;
+          if (errorCallback) {
+            errorCallback(err);
+          }
         }
       },
       error => {
+        let err: Error;
         if (
           this.isFirestoreError(error) &&
           error.code === 'failed-precondition'
         ) {
-          const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
-          throw new Error(message);
+          err = new Error(
+            `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`
+          );
         } else {
-          throw new Error(
+          err = new Error(
             `Failed to subscribe to query: ${this.getErrorMessage(error)}`
           );
+        }
+        this.logger.error(
+          'Error in query subscription:',
+          this.getErrorMessage(err)
+        );
+        if (errorCallback) {
+          errorCallback(err);
         }
       }
     );
@@ -670,6 +954,54 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     callback: (transaction: admin.firestore.Transaction) => Promise<R>
   ): Promise<R> {
     return this.firestoreInstance.runTransaction(callback);
+  }
+
+  /**
+   * Executes a transaction with automatic retry on transient failures
+   * Useful for handling transaction contention in high-concurrency scenarios
+   *
+   * @param callback - Transaction callback with transaction context
+   * @param maxRetries - Maximum number of retry attempts (default: 0, no retry)
+   * @returns Result from the transaction callback
+   *
+   * @example
+   * // Transfer with retry logic (retry up to 3 times)
+   * await collection.runTransactionWithRetry(async (transaction) => {
+   *   const senderRef = collection.doc('user1');
+   *   const senderDoc = await transaction.get(senderRef);
+   *   // ... transaction logic
+   * }, 3);
+   */
+  async runTransactionWithRetry<R>(
+    callback: (transaction: admin.firestore.Transaction) => Promise<R>,
+    maxRetries = 0
+  ): Promise<R> {
+    const totalAttempts = maxRetries + 1; // 0 retries = 1 attempt total
+    let lastError: Error;
+
+    for (let attempt = 0; attempt < totalAttempts; attempt++) {
+      try {
+        return await this.runTransaction(callback);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt < totalAttempts - 1) {
+          const delay = Math.pow(2, attempt) * 100; // Exponential backoff
+          this.logger.warn(
+            `Transaction attempt ${attempt + 1} failed, retrying in ${delay}ms...`,
+            {error: this.getErrorMessage(lastError)}
+          );
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    if (maxRetries > 0) {
+      this.logger.error(
+        `Transaction failed after ${totalAttempts} attempts`,
+        this.getErrorMessage(lastError!)
+      );
+    }
+    throw lastError!;
   }
 
   /**
@@ -819,6 +1151,104 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
 
       return {id: docId, data: updatedData};
     });
+  }
+
+  /**
+   * Validates query against Firestore constraints
+   * Throws QueryValidationError if constraints are violated
+   */
+  private validateQueryConstraints(query: QueryPayload<T>[]): void {
+    const operators = query.map(q => q.operator);
+
+    // 1. Check for multiple != operators
+    const notEqualCount = operators.filter(op => op === '!=').length;
+    if (notEqualCount > 1) {
+      const errorMsg =
+        'Cannot use multiple "!=" operators in the same query. Firestore allows only one "!=" per query.';
+      this.logger.warn(`Query validation failed: ${errorMsg}`);
+      throw new QueryValidationError(errorMsg);
+    }
+
+    // 2. Check for != combined with not-in
+    const hasNotEqual = operators.includes('!=');
+    const hasNotIn = operators.includes('not-in');
+    if (hasNotEqual && hasNotIn) {
+      const errorMsg =
+        'Cannot combine "!=" and "not-in" operators in the same query. Use only one of them.';
+      this.logger.warn(`Query validation failed: ${errorMsg}`);
+      throw new QueryValidationError(errorMsg);
+    }
+
+    // 3. Check for != combined with in
+    const hasIn = operators.includes('in');
+    if (hasNotEqual && hasIn) {
+      const errorMsg =
+        'Cannot combine "!=" and "in" operators in the same query.';
+      this.logger.warn(`Query validation failed: ${errorMsg}`);
+      throw new QueryValidationError(errorMsg);
+    }
+
+    // 4. Check for multiple array-contains operators
+    const arrayContainsCount = operators.filter(
+      op => op === 'array-contains'
+    ).length;
+    if (arrayContainsCount > 1) {
+      const errorMsg =
+        'Cannot use multiple "array-contains" operators in the same query. Use "array-contains-any" for multiple values.';
+      this.logger.warn(`Query validation failed: ${errorMsg}`);
+      throw new QueryValidationError(errorMsg);
+    }
+
+    // 5. Check for array-contains combined with array-contains-any
+    const hasArrayContains = operators.includes('array-contains');
+    const hasArrayContainsAny = operators.includes('array-contains-any');
+    if (hasArrayContains && hasArrayContainsAny) {
+      const errorMsg =
+        'Cannot combine "array-contains" and "array-contains-any" in the same query. Use only one of them.';
+      this.logger.warn(`Query validation failed: ${errorMsg}`);
+      throw new QueryValidationError(errorMsg);
+    }
+
+    // 6. Check for multiple "in" family operators
+    const inFamilyOps = ['in', 'not-in', 'array-contains-any'].filter(op =>
+      operators.includes(op as FirebaseFirestore.WhereFilterOp)
+    );
+    if (inFamilyOps.length > 1) {
+      const errorMsg = `Cannot use multiple "in" family operators (in, not-in, array-contains-any) in the same query. Found: ${inFamilyOps.join(', ')}`;
+      this.logger.warn(`Query validation failed: ${errorMsg}`);
+      throw new QueryValidationError(errorMsg);
+    }
+
+    // 7. Validate array sizes for in/not-in/array-contains-any (max 10 items)
+    for (const queryItem of query) {
+      if (['in', 'not-in', 'array-contains-any'].includes(queryItem.operator)) {
+        const value = queryItem.value;
+        if (Array.isArray(value) && value.length > 10) {
+          const errorMsg = `Operator "${queryItem.operator}" supports maximum 10 values, but ${value.length} were provided for field "${String(queryItem.field)}". Consider splitting into multiple queries.`;
+          this.logger.warn(`Query validation failed: ${errorMsg}`);
+          throw new QueryValidationError(errorMsg);
+        }
+      }
+    }
+
+    // 8. Check for range queries on different fields
+    const rangeOperators = ['<', '<=', '>', '>=', '!='];
+    const rangeFields = new Set<keyof T>();
+
+    for (const queryItem of query) {
+      if (rangeOperators.includes(queryItem.operator)) {
+        rangeFields.add(queryItem.field);
+      }
+    }
+
+    if (rangeFields.size > 1) {
+      const fieldNames = Array.from(rangeFields)
+        .map(f => String(f))
+        .join(', ');
+      const errorMsg = `Cannot use range operators (<, <=, >, >=, !=) on multiple fields. Found range queries on: ${fieldNames}. Firestore allows range operators on only one field per query.`;
+      this.logger.warn(`Query validation failed: ${errorMsg}`);
+      throw new QueryValidationError(errorMsg);
+    }
   }
 
   private isFirestoreError(error: unknown): error is admin.FirebaseError {

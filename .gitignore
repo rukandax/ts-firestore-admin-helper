@@ -1,3 +1,12 @@
 node_modules
 *.log
 .DS_Store
+coverage/
+.env
+.env.local
+*.tsbuildinfo
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

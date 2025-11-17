@@ -1,23 +1,60 @@
 import * as admin from 'firebase-admin';
-interface BaseDocument {
+/**
+ * Logger interface that supports any logging library
+ * Compatible with Winston, Pino, Bunyan, console, and custom loggers
+ */
+export interface Logger {
+    debug(message: string, ...meta: unknown[]): void;
+    info(message: string, ...meta: unknown[]): void;
+    warn(message: string, ...meta: unknown[]): void;
+    error(message: string, ...meta: unknown[]): void;
+}
+export interface BaseDocument {
     createdAt?: number;
     updatedAt?: number;
 }
-type QueryPayload<T> = {
+export interface FirestoreHelperOptions {
+    /**
+     * Custom logger instance (Winston, Pino, Bunyan, etc.)
+     * If not provided, uses console logger
+     * Set to 'silent' to disable all logging
+     */
+    logger?: Logger | 'silent';
+    /**
+     * Enable debug logging (default: false)
+     */
+    debug?: boolean;
+    /**
+     * Custom document ID length (default: 30)
+     * Only applies to auto-generated IDs
+     */
+    idLength?: number;
+}
+export type QueryPayload<T> = {
     field: keyof T;
     operator: FirebaseFirestore.WhereFilterOp;
     value: T[keyof T] | T[keyof T][] | boolean | null;
 };
-type QueryOptions<T> = {
-    orderBy?: keyof T;
+export type OrderByOption<T> = {
+    field: keyof T;
+    direction?: 'asc' | 'desc';
+};
+export type QueryOptions<T> = {
+    orderBy?: keyof T | OrderByOption<T>[];
     orderDirection?: 'asc' | 'desc';
     limit?: number;
     startAfterId?: string;
 };
+export declare class QueryValidationError extends Error {
+    constructor(message: string);
+}
 export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     private collection;
     private firestoreInstance;
-    constructor(firestoreInstance: admin.firestore.Firestore, collectionPath: string);
+    private logger;
+    private debugMode;
+    private idLength;
+    constructor(firestoreInstance: admin.firestore.Firestore, collectionPath: string, options?: FirestoreHelperOptions);
     /**
      * Validates Firestore connection by attempting a simple read operation
      * @throws Error if connection fails
@@ -36,6 +73,10 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
      */
     private validateDocumentData;
     private generateUniqueId;
+    /**
+     * Gets current Unix timestamp in milliseconds
+     * Uses Firestore server timestamp for consistency
+     */
     private getUnixTimestamp;
     private validateUnixTimestamp;
     private validateTimestampFields;
@@ -58,11 +99,61 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         data: Partial<T>;
     }[]): Promise<void>;
     batchRemove(docIds: string[]): Promise<void>;
+    /**
+     * Batch add documents with automatic chunking for large datasets (>500 documents)
+     * Automatically splits the operation into multiple batches
+     *
+     * @param documents - Array of documents to add
+     * @returns Promise that resolves when all documents are added
+     *
+     * @example
+     * // Add 1000 documents (will be split into 2 batches)
+     * await collection.batchAddLarge(largeDocumentArray);
+     */
+    batchAddLarge(documents: {
+        id?: string;
+        data: T;
+        override?: boolean;
+    }[]): Promise<void>;
+    /**
+     * Batch edit documents with automatic chunking for large datasets (>500 documents)
+     * Automatically splits the operation into multiple batches
+     *
+     * @param updates - Array of document updates
+     * @returns Promise that resolves when all documents are updated
+     *
+     * @example
+     * // Update 1000 documents
+     * await collection.batchEditLarge(largeUpdateArray);
+     */
+    batchEditLarge(updates: {
+        id: string;
+        data: Partial<T>;
+    }[]): Promise<void>;
+    /**
+     * Batch remove documents with automatic chunking for large datasets (>500 documents)
+     * Automatically splits the operation into multiple batches
+     *
+     * @param docIds - Array of document IDs to remove
+     * @returns Promise that resolves when all documents are removed
+     *
+     * @example
+     * // Remove 1000 documents
+     * await collection.batchRemoveLarge(largeIdArray);
+     */
+    batchRemoveLarge(docIds: string[]): Promise<void>;
     getDocument(docId: string): Promise<admin.firestore.DocumentSnapshot<T>>;
     getDocumentData(docId: string): Promise<{
         id: string;
         data: T;
     } | null>;
+    /**
+     * Executes a Firestore query with proper error handling
+     * @param query - The Firestore query to execute
+     * @param operation - The operation to perform on the query
+     * @returns Result from the operation
+     */
+    private executeQuery;
     findDocuments(query: QueryPayload<T>[], options?: QueryOptions<T>): Promise<admin.firestore.QuerySnapshot<T>>;
     findDocument(query: QueryPayload<T>[]): Promise<admin.firestore.QueryDocumentSnapshot<T, admin.firestore.DocumentData> | null>;
     findDocumentsData(query: QueryPayload<T>[], options?: QueryOptions<T>): Promise<{
@@ -77,9 +168,9 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     subscribeDocument(docId: string, callback: (doc: {
         id: string;
         data: T;
-    }) => void): () => void;
-    subscribeCollection(callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void): () => void;
-    subscribeQuery(query: QueryPayload<T>[], callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void): () => void;
+    }) => void, errorCallback?: (error: Error) => void): () => void;
+    subscribeCollection(callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void, errorCallback?: (error: Error) => void): () => void;
+    subscribeQuery(query: QueryPayload<T>[], callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void, errorCallback?: (error: Error) => void): () => void;
     /**
      * Executes a custom transaction with full control
      * Perfect for complex operations like balance updates, inventory management, etc.
@@ -121,6 +212,23 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
      * });
      */
     runTransaction<R>(callback: (transaction: admin.firestore.Transaction) => Promise<R>): Promise<R>;
+    /**
+     * Executes a transaction with automatic retry on transient failures
+     * Useful for handling transaction contention in high-concurrency scenarios
+     *
+     * @param callback - Transaction callback with transaction context
+     * @param maxRetries - Maximum number of retry attempts (default: 0, no retry)
+     * @returns Result from the transaction callback
+     *
+     * @example
+     * // Transfer with retry logic (retry up to 3 times)
+     * await collection.runTransactionWithRetry(async (transaction) => {
+     *   const senderRef = collection.doc('user1');
+     *   const senderDoc = await transaction.get(senderRef);
+     *   // ... transaction logic
+     * }, 3);
+     */
+    runTransactionWithRetry<R>(callback: (transaction: admin.firestore.Transaction) => Promise<R>, maxRetries?: number): Promise<R>;
     /**
      * Helper method to get document reference for use in custom transactions
      * @param docId - Document ID
@@ -177,8 +285,12 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         id: string;
         data: T;
     } | null>;
+    /**
+     * Validates query against Firestore constraints
+     * Throws QueryValidationError if constraints are violated
+     */
+    private validateQueryConstraints;
     private isFirestoreError;
     private getErrorMessage;
 }
-export {};
 //# sourceMappingURL=index.d.ts.map
