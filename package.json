@@ -43,7 +43,7 @@
   "description": "Typesafe Firestore Admin Helper",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rukandax/ts-firestore-admin-helper.git"
+    "url": "git+https://github.com/rukandax/ts-firestore-admin-helper.git"
   },
   "bugs": {
     "url": "https://github.com/rukandax/ts-firestore-admin-helper/issues"
