@@ -170,9 +170,41 @@ class FirestoreHelper {
             throw new Error(`Invalid value for updatedAt: ${data.updatedAt}`);
         }
     }
+    /**
+     * Removes fields with undefined values from an object
+     * This prevents Firestore errors when saving documents with undefined fields
+     * @param data - Object to clean
+     * @returns New object without undefined fields
+     */
+    removeUndefinedFields(data) {
+        const cleaned = {};
+        for (const key in data) {
+            if (data[key] !== undefined) {
+                cleaned[key] = data[key];
+            }
+        }
+        return cleaned;
+    }
+    /**
+     * Extracts fields with undefined values and marks them for deletion in Firestore
+     * Used in update operations to delete fields when value is undefined
+     * @param data - Object to process
+     * @returns Object with FieldValue.delete() for undefined fields
+     */
+    extractUndefinedFields(data) {
+        const fieldsToDelete = {};
+        for (const key in data) {
+            if (data[key] === undefined) {
+                fieldsToDelete[key] = admin.firestore.FieldValue.delete();
+            }
+        }
+        return fieldsToDelete;
+    }
     async addDocument(data, id, override) {
+        // Remove undefined fields before validation and saving
+        const cleanedData = this.removeUndefinedFields(data);
         // Validate document data
-        this.validateDocumentData(data);
+        this.validateDocumentData(cleanedData);
         // Validate custom ID if provided
         if (id) {
             this.validateCustomId(id);
@@ -193,7 +225,7 @@ class FirestoreHelper {
             }
             const existingData = docSnapshot.data();
             const timestampedData = {
-                ...data,
+                ...cleanedData,
                 createdAt: id
                     ? existingData?.createdAt || this.getUnixTimestamp()
                     : this.getUnixTimestamp(),
@@ -205,21 +237,29 @@ class FirestoreHelper {
         return result;
     }
     async editDocument(docId, data) {
-        // Validate document data
-        this.validateDocumentData(data);
+        // Extract fields to delete (undefined values)
+        const fieldsToDelete = this.extractUndefinedFields(data);
+        // Remove undefined fields from data before validation
+        const cleanedData = this.removeUndefinedFields(data);
+        // Validate document data (only if there are non-undefined fields)
+        if (Object.keys(cleanedData).length > 0) {
+            this.validateDocumentData(cleanedData);
+        }
         const docRef = this.collection.doc(docId);
         return this.firestoreInstance.runTransaction(async (transaction) => {
             const docSnapshot = await transaction.get(docRef);
             if (!docSnapshot.exists) {
                 throw new Error(`Document with ID ${docId} does not exist`);
             }
-            this.validateTimestampFields(data);
+            this.validateTimestampFields(cleanedData);
             // Prevent updating the document ID
-            if ('id' in data) {
+            if ('id' in cleanedData) {
                 throw new Error('Cannot update the document ID');
             }
+            // Merge cleaned data with fields to delete
             const timestampedData = {
-                ...data,
+                ...cleanedData,
+                ...fieldsToDelete,
                 updatedAt: this.getUnixTimestamp(),
             };
             transaction.update(docRef, timestampedData);
@@ -228,10 +268,15 @@ class FirestoreHelper {
             if (!currentData) {
                 throw new Error(`Document with ID ${docId} has no data`);
             }
+            // Remove deleted fields from the final result
             const updatedData = {
                 ...currentData,
-                ...timestampedData,
+                ...cleanedData,
             };
+            // Remove fields that were marked for deletion
+            for (const key in fieldsToDelete) {
+                delete updatedData[key];
+            }
             return { id: docSnapshot.id, data: updatedData };
         });
     }
@@ -252,17 +297,20 @@ class FirestoreHelper {
         if (documents.length > MAX_BATCH_SIZE) {
             throw new Error(`Batch size exceeds Firestore limit. Maximum ${MAX_BATCH_SIZE} documents allowed, received ${documents.length}`);
         }
-        // Validate all documents and custom IDs before transaction
-        for (const { id, data } of documents) {
-            this.validateDocumentData(data);
+        // Clean undefined fields and validate all documents and custom IDs before transaction
+        const cleanedDocuments = [];
+        for (const { id, data, override } of documents) {
+            const cleanedData = this.removeUndefinedFields(data);
+            this.validateDocumentData(cleanedData);
             if (id) {
                 this.validateCustomId(id);
             }
+            cleanedDocuments.push({ id, data: cleanedData, override });
         }
         // Generate all IDs sequentially to avoid race conditions
         const documentsWithIds = [];
         const generatedIds = new Set();
-        for (const { id, data, override } of documents) {
+        for (const { id, data, override } of cleanedDocuments) {
             let finalId;
             if (id) {
                 finalId = id;
@@ -300,24 +348,33 @@ class FirestoreHelper {
         if (updates.length > MAX_BATCH_SIZE) {
             throw new Error(`Batch size exceeds Firestore limit. Maximum ${MAX_BATCH_SIZE} documents allowed, received ${updates.length}`);
         }
-        // Validate all updates before transaction
-        for (const { data } of updates) {
-            this.validateDocumentData(data);
-            this.validateTimestampFields(data);
+        // Process undefined fields and validate all updates before transaction
+        const processedUpdates = [];
+        for (const { id, data } of updates) {
+            const fieldsToDelete = this.extractUndefinedFields(data);
+            const cleanedData = this.removeUndefinedFields(data);
+            // Validate document data (only if there are non-undefined fields)
+            if (Object.keys(cleanedData).length > 0) {
+                this.validateDocumentData(cleanedData);
+            }
+            this.validateTimestampFields(cleanedData);
             // Prevent updating the document ID
-            if ('id' in data) {
+            if ('id' in cleanedData) {
                 throw new Error('Cannot update the document ID');
             }
+            processedUpdates.push({ id, cleanedData, fieldsToDelete });
         }
         return this.firestoreInstance.runTransaction(async (transaction) => {
-            for (const { id, data } of updates) {
+            for (const { id, cleanedData, fieldsToDelete } of processedUpdates) {
                 const docRef = this.collection.doc(id);
                 const docSnapshot = await transaction.get(docRef);
                 if (!docSnapshot.exists) {
                     throw new Error(`Document with ID ${id} does not exist`);
                 }
+                // Merge cleaned data with fields to delete
                 const timestampedData = {
-                    ...data,
+                    ...cleanedData,
+                    ...fieldsToDelete,
                     updatedAt: this.getUnixTimestamp(),
                 };
                 transaction.update(docRef, timestampedData);

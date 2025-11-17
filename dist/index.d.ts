@@ -80,6 +80,20 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     private getUnixTimestamp;
     private validateUnixTimestamp;
     private validateTimestampFields;
+    /**
+     * Removes fields with undefined values from an object
+     * This prevents Firestore errors when saving documents with undefined fields
+     * @param data - Object to clean
+     * @returns New object without undefined fields
+     */
+    private removeUndefinedFields;
+    /**
+     * Extracts fields with undefined values and marks them for deletion in Firestore
+     * Used in update operations to delete fields when value is undefined
+     * @param data - Object to process
+     * @returns Object with FieldValue.delete() for undefined fields
+     */
+    private extractUndefinedFields;
     addDocument(data: T, id?: string, override?: boolean): Promise<{
         id: string;
         data: T;

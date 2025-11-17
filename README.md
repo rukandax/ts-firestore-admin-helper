@@ -382,8 +382,9 @@ const result = await usersCollection.runTransaction(async (transaction) => {
 
 - [📘 Advanced Transactions](./docs/TRANSACTIONS.md) - Wallet transfers, inventory management, seat reservations
 - [🔍 Query & OrderBy Patterns](./docs/QUERIES.md) - Queries, pagination, multiple orderBy, search patterns
-- [� Batch Operations](./docs/BATCH_OPERATIONS.md) - Bulk operations, imports, performance optimization
+- [📦 Batch Operations](./docs/BATCH_OPERATIONS.md) - Bulk operations, imports, performance optimization
 - [⚡ Real-time Subscriptions](./docs/REALTIME.md) - Live data, chat apps, presence systems
+- [🔧 Undefined Value Handling](./docs/UNDEFINED_HANDLING.md) - Auto-cleanup undefined fields, delete fields on update
 
 ## Best Practices
 

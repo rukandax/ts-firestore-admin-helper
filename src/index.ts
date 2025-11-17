@@ -242,13 +242,50 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     }
   }
 
+  /**
+   * Removes fields with undefined values from an object
+   * This prevents Firestore errors when saving documents with undefined fields
+   * @param data - Object to clean
+   * @returns New object without undefined fields
+   */
+  private removeUndefinedFields<D>(data: D): Partial<D> {
+    const cleaned: Partial<D> = {};
+    for (const key in data) {
+      if (data[key] !== undefined) {
+        cleaned[key] = data[key];
+      }
+    }
+    return cleaned;
+  }
+
+  /**
+   * Extracts fields with undefined values and marks them for deletion in Firestore
+   * Used in update operations to delete fields when value is undefined
+   * @param data - Object to process
+   * @returns Object with FieldValue.delete() for undefined fields
+   */
+  private extractUndefinedFields<D>(
+    data: D
+  ): Record<string, admin.firestore.FieldValue> {
+    const fieldsToDelete: Record<string, admin.firestore.FieldValue> = {};
+    for (const key in data) {
+      if (data[key] === undefined) {
+        fieldsToDelete[key] = admin.firestore.FieldValue.delete();
+      }
+    }
+    return fieldsToDelete;
+  }
+
   async addDocument(
     data: T,
     id?: string,
     override?: boolean
   ): Promise<{id: string; data: T}> {
+    // Remove undefined fields before validation and saving
+    const cleanedData = this.removeUndefinedFields(data) as T;
+
     // Validate document data
-    this.validateDocumentData(data);
+    this.validateDocumentData(cleanedData);
 
     // Validate custom ID if provided
     if (id) {
@@ -278,7 +315,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
 
         const existingData = docSnapshot.data();
         const timestampedData: T = {
-          ...data,
+          ...cleanedData,
           createdAt: id
             ? existingData?.createdAt || this.getUnixTimestamp()
             : this.getUnixTimestamp(),
@@ -298,8 +335,16 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     docId: string,
     data: Partial<T>
   ): Promise<{id: string; data: T}> {
-    // Validate document data
-    this.validateDocumentData(data);
+    // Extract fields to delete (undefined values)
+    const fieldsToDelete = this.extractUndefinedFields(data);
+
+    // Remove undefined fields from data before validation
+    const cleanedData = this.removeUndefinedFields(data);
+
+    // Validate document data (only if there are non-undefined fields)
+    if (Object.keys(cleanedData).length > 0) {
+      this.validateDocumentData(cleanedData);
+    }
 
     const docRef = this.collection.doc(docId);
 
@@ -310,15 +355,17 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         throw new Error(`Document with ID ${docId} does not exist`);
       }
 
-      this.validateTimestampFields(data);
+      this.validateTimestampFields(cleanedData);
 
       // Prevent updating the document ID
-      if ('id' in data) {
+      if ('id' in cleanedData) {
         throw new Error('Cannot update the document ID');
       }
 
-      const timestampedData: Partial<T> = {
-        ...data,
+      // Merge cleaned data with fields to delete
+      const timestampedData: Partial<T> & Record<string, unknown> = {
+        ...cleanedData,
+        ...fieldsToDelete,
         updatedAt: this.getUnixTimestamp(),
       };
 
@@ -333,10 +380,16 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         throw new Error(`Document with ID ${docId} has no data`);
       }
 
+      // Remove deleted fields from the final result
       const updatedData: T = {
         ...currentData,
-        ...timestampedData,
+        ...cleanedData,
       } as T;
+
+      // Remove fields that were marked for deletion
+      for (const key in fieldsToDelete) {
+        delete (updatedData as Record<string, unknown>)[key];
+      }
 
       return {id: docSnapshot.id, data: updatedData};
     });
@@ -369,12 +422,15 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
       );
     }
 
-    // Validate all documents and custom IDs before transaction
-    for (const {id, data} of documents) {
-      this.validateDocumentData(data);
+    // Clean undefined fields and validate all documents and custom IDs before transaction
+    const cleanedDocuments: {id?: string; data: T; override?: boolean}[] = [];
+    for (const {id, data, override} of documents) {
+      const cleanedData = this.removeUndefinedFields(data) as T;
+      this.validateDocumentData(cleanedData);
       if (id) {
         this.validateCustomId(id);
       }
+      cleanedDocuments.push({id, data: cleanedData, override});
     }
 
     // Generate all IDs sequentially to avoid race conditions
@@ -382,7 +438,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
       [];
     const generatedIds = new Set<string>();
 
-    for (const {id, data, override} of documents) {
+    for (const {id, data, override} of cleanedDocuments) {
       let finalId: string;
       if (id) {
         finalId = id;
@@ -430,19 +486,34 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
       );
     }
 
-    // Validate all updates before transaction
-    for (const {data} of updates) {
-      this.validateDocumentData(data);
-      this.validateTimestampFields(data);
+    // Process undefined fields and validate all updates before transaction
+    const processedUpdates: Array<{
+      id: string;
+      cleanedData: Partial<T>;
+      fieldsToDelete: Record<string, admin.firestore.FieldValue>;
+    }> = [];
+
+    for (const {id, data} of updates) {
+      const fieldsToDelete = this.extractUndefinedFields(data);
+      const cleanedData = this.removeUndefinedFields(data);
+
+      // Validate document data (only if there are non-undefined fields)
+      if (Object.keys(cleanedData).length > 0) {
+        this.validateDocumentData(cleanedData);
+      }
+
+      this.validateTimestampFields(cleanedData);
 
       // Prevent updating the document ID
-      if ('id' in data) {
+      if ('id' in cleanedData) {
         throw new Error('Cannot update the document ID');
       }
+
+      processedUpdates.push({id, cleanedData, fieldsToDelete});
     }
 
     return this.firestoreInstance.runTransaction(async transaction => {
-      for (const {id, data} of updates) {
+      for (const {id, cleanedData, fieldsToDelete} of processedUpdates) {
         const docRef = this.collection.doc(id);
         const docSnapshot = await transaction.get(docRef);
 
@@ -450,8 +521,10 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
           throw new Error(`Document with ID ${id} does not exist`);
         }
 
-        const timestampedData: Partial<T> = {
-          ...data,
+        // Merge cleaned data with fields to delete
+        const timestampedData: Partial<T> & Record<string, unknown> = {
+          ...cleanedData,
+          ...fieldsToDelete,
           updatedAt: this.getUnixTimestamp(),
         };
 
