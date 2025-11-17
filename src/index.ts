@@ -1,4 +1,10 @@
 import * as admin from 'firebase-admin';
+import * as crypto from 'crypto';
+
+// Constants
+const DEFAULT_ID_LENGTH = 30;
+const MAX_BATCH_SIZE = 500; // Firestore transaction limit
+const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 interface BaseDocument {
   createdAt?: number; // Unix timestamp
@@ -8,7 +14,7 @@ interface BaseDocument {
 type QueryPayload<T> = {
   field: keyof T; // Ensures field is a key of T
   operator: FirebaseFirestore.WhereFilterOp;
-  value: any;
+  value: T[keyof T] | T[keyof T][] | boolean | null;
 };
 
 type QueryOptions<T> = {
@@ -20,23 +26,23 @@ type QueryOptions<T> = {
 
 export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
   private collection: admin.firestore.CollectionReference<T>;
+  private firestoreInstance: admin.firestore.Firestore;
 
   constructor(
     firestoreInstance: admin.firestore.Firestore,
     collectionPath: string
   ) {
+    this.firestoreInstance = firestoreInstance;
     this.collection = firestoreInstance.collection(
       collectionPath
     ) as admin.firestore.CollectionReference<T>;
-
-    this.checkConnection().catch(error => {
-      throw new Error(
-        `Failed to connect to Firestore: ${this.getErrorMessage(error)}`
-      );
-    });
   }
 
-  private async checkConnection(): Promise<void> {
+  /**
+   * Validates Firestore connection by attempting a simple read operation
+   * @throws Error if connection fails
+   */
+  async validateConnection(): Promise<void> {
     const testDocRef = this.collection.doc(
       'ts_firestore_admin_helper_test_connection'
     );
@@ -50,18 +56,61 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     }
   }
 
-  private generateRandomId(length: number) {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  /**
+   * Generates a cryptographically secure random ID
+   */
+  private generateRandomId(length: number): string {
+    const bytes = crypto.randomBytes(length);
     let result = '';
     for (let i = 0; i < length; i++) {
-      const randomIndex = Math.floor(Math.random() * chars.length);
-      result += chars[randomIndex];
+      const byte = bytes[i];
+      if (byte === undefined) {
+        throw new Error('Failed to generate random bytes');
+      }
+      const randomIndex = byte % ID_CHARS.length;
+      result += ID_CHARS[randomIndex];
     }
     return result;
   }
 
-  private async generateUniqueId(length: number) {
-    let id;
+  /**
+   * Validates custom document ID format
+   */
+  private validateCustomId(id: string): void {
+    if (!id || typeof id !== 'string') {
+      throw new Error('Document ID must be a non-empty string');
+    }
+    if (id.length > 1500) {
+      throw new Error('Document ID must not exceed 1500 characters');
+    }
+    if (id.startsWith('__') && id.endsWith('__')) {
+      throw new Error(
+        'Document ID cannot start and end with double underscores'
+      );
+    }
+    // Firestore doesn't allow certain characters in document IDs
+    if (/[/]/.test(id)) {
+      throw new Error('Document ID cannot contain forward slashes');
+    }
+  }
+
+  /**
+   * Validates document data is not empty
+   */
+  private validateDocumentData(data: Partial<T>): void {
+    if (!data || typeof data !== 'object') {
+      throw new Error('Document data must be a valid object');
+    }
+    const keys = Object.keys(data).filter(
+      key => key !== 'createdAt' && key !== 'updatedAt'
+    );
+    if (keys.length === 0) {
+      throw new Error('Document data cannot be empty');
+    }
+  }
+
+  private async generateUniqueId(length: number): Promise<string> {
+    let id: string;
     let doc: admin.firestore.DocumentSnapshot<T>;
 
     do {
@@ -72,11 +121,11 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     return id;
   }
 
-  private getUnixTimestamp() {
+  private getUnixTimestamp(): number {
     return Date.now(); // Milliseconds since Unix epoch
   }
 
-  private validateUnixTimestamp(timestamp: number) {
+  private validateUnixTimestamp(timestamp: number): boolean {
     return (
       typeof timestamp === 'number' &&
       Number.isInteger(timestamp) &&
@@ -104,30 +153,41 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     id?: string,
     override?: boolean
   ): Promise<{id: string; data: T}> {
-    const docId = id || (await this.generateUniqueId(30));
+    // Validate document data
+    this.validateDocumentData(data);
+
+    // Validate custom ID if provided
+    if (id) {
+      this.validateCustomId(id);
+    }
+
+    const docId = id || (await this.generateUniqueId(DEFAULT_ID_LENGTH));
     const docRef = this.collection.doc(docId);
 
-    const result = await admin.firestore().runTransaction(async transaction => {
-      const docSnapshot = await transaction.get(docRef);
+    const result = await this.firestoreInstance.runTransaction(
+      async transaction => {
+        const docSnapshot = await transaction.get(docRef);
 
-      if (id && !(override || !docSnapshot.exists)) {
-        throw new Error(
-          `Document with ID ${id} already exists. Use "override: true" to replace the data.`
-        );
+        if (id && !(override || !docSnapshot.exists)) {
+          throw new Error(
+            `Document with ID ${id} already exists. Use "override: true" to replace the data.`
+          );
+        }
+
+        const existingData = docSnapshot.data();
+        const timestampedData: T = {
+          ...data,
+          createdAt: id
+            ? existingData?.createdAt || this.getUnixTimestamp()
+            : this.getUnixTimestamp(),
+          updatedAt: this.getUnixTimestamp(),
+        };
+
+        transaction.set(docRef, timestampedData, {merge: override});
+
+        return {id: docId, data: timestampedData};
       }
-
-      const timestampedData: T = {
-        ...data,
-        createdAt: id
-          ? docSnapshot.data()?.createdAt || this.getUnixTimestamp()
-          : this.getUnixTimestamp(),
-        updatedAt: this.getUnixTimestamp(),
-      };
-
-      transaction.set(docRef, timestampedData, {merge: override});
-
-      return {id: docId, data: timestampedData};
-    });
+    );
 
     return result;
   }
@@ -136,9 +196,12 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     docId: string,
     data: Partial<T>
   ): Promise<{id: string; data: T}> {
+    // Validate document data
+    this.validateDocumentData(data);
+
     const docRef = this.collection.doc(docId);
 
-    return admin.firestore().runTransaction(async transaction => {
+    return this.firestoreInstance.runTransaction(async transaction => {
       const docSnapshot = await transaction.get(docRef);
 
       if (!docSnapshot.exists) {
@@ -162,22 +225,25 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         timestampedData as admin.firestore.UpdateData<T>
       );
 
-      // Fetch the updated document
-      const updatedDocSnapshot = await docRef.get();
-      if (!updatedDocSnapshot.exists) {
-        throw new Error(
-          `Document with ID ${docId} does not exist after update`
-        );
+      // Merge current data with updated data to return complete document
+      const currentData = docSnapshot.data();
+      if (!currentData) {
+        throw new Error(`Document with ID ${docId} has no data`);
       }
 
-      return {id: updatedDocSnapshot.id, data: updatedDocSnapshot.data() as T};
+      const updatedData: T = {
+        ...currentData,
+        ...timestampedData,
+      } as T;
+
+      return {id: docSnapshot.id, data: updatedData};
     });
   }
 
   async removeDocument(docId: string): Promise<void> {
     const docRef = this.collection.doc(docId);
 
-    return admin.firestore().runTransaction(async transaction => {
+    return this.firestoreInstance.runTransaction(async transaction => {
       const docSnapshot = await transaction.get(docRef);
 
       if (!docSnapshot.exists) {
@@ -191,23 +257,48 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
   async batchAdd(
     documents: {id?: string; data: T; override?: boolean}[]
   ): Promise<void> {
-    return admin.firestore().runTransaction(async transaction => {
-      for (const {id, data, override} of documents) {
-        const docId = id || (await this.generateUniqueId(30));
-        const docRef = this.collection.doc(docId);
+    if (documents.length === 0) {
+      throw new Error('Batch operation requires at least one document');
+    }
+
+    if (documents.length > MAX_BATCH_SIZE) {
+      throw new Error(
+        `Batch size exceeds Firestore limit. Maximum ${MAX_BATCH_SIZE} documents allowed, received ${documents.length}`
+      );
+    }
+
+    // Validate all documents and custom IDs before transaction
+    for (const {id, data} of documents) {
+      this.validateDocumentData(data);
+      if (id) {
+        this.validateCustomId(id);
+      }
+    }
+
+    // Generate all IDs before transaction to avoid race conditions
+    const documentsWithIds = await Promise.all(
+      documents.map(async ({id, data, override}) => ({
+        id: id || (await this.generateUniqueId(DEFAULT_ID_LENGTH)),
+        data,
+        override,
+      }))
+    );
+
+    return this.firestoreInstance.runTransaction(async transaction => {
+      for (const {id, data, override} of documentsWithIds) {
+        const docRef = this.collection.doc(id);
         const docSnapshot = await transaction.get(docRef);
 
-        if (id && !(override || !docSnapshot.exists)) {
+        if (!(override || !docSnapshot.exists)) {
           throw new Error(
             `Document with ID ${id} already exists. Use "override: true" to replace the data.`
           );
         }
 
+        const existingData = docSnapshot.data();
         const timestampedData: T = {
           ...data,
-          createdAt: id
-            ? docSnapshot.data()?.createdAt || this.getUnixTimestamp()
-            : this.getUnixTimestamp(),
+          createdAt: existingData?.createdAt || this.getUnixTimestamp(),
           updatedAt: this.getUnixTimestamp(),
         };
 
@@ -217,20 +308,34 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
   }
 
   async batchEdit(updates: {id: string; data: Partial<T>}[]): Promise<void> {
-    return admin.firestore().runTransaction(async transaction => {
+    if (updates.length === 0) {
+      throw new Error('Batch operation requires at least one document');
+    }
+
+    if (updates.length > MAX_BATCH_SIZE) {
+      throw new Error(
+        `Batch size exceeds Firestore limit. Maximum ${MAX_BATCH_SIZE} documents allowed, received ${updates.length}`
+      );
+    }
+
+    // Validate all updates before transaction
+    for (const {data} of updates) {
+      this.validateDocumentData(data);
+      this.validateTimestampFields(data);
+
+      // Prevent updating the document ID
+      if ('id' in data) {
+        throw new Error('Cannot update the document ID');
+      }
+    }
+
+    return this.firestoreInstance.runTransaction(async transaction => {
       for (const {id, data} of updates) {
         const docRef = this.collection.doc(id);
         const docSnapshot = await transaction.get(docRef);
 
         if (!docSnapshot.exists) {
           throw new Error(`Document with ID ${id} does not exist`);
-        }
-
-        this.validateTimestampFields(data);
-
-        // Prevent updating the document ID
-        if ('id' in data) {
-          throw new Error('Cannot update the document ID');
         }
 
         const timestampedData: Partial<T> = {
@@ -247,7 +352,17 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
   }
 
   async batchRemove(docIds: string[]): Promise<void> {
-    return admin.firestore().runTransaction(async transaction => {
+    if (docIds.length === 0) {
+      throw new Error('Batch operation requires at least one document ID');
+    }
+
+    if (docIds.length > MAX_BATCH_SIZE) {
+      throw new Error(
+        `Batch size exceeds Firestore limit. Maximum ${MAX_BATCH_SIZE} documents allowed, received ${docIds.length}`
+      );
+    }
+
+    return this.firestoreInstance.runTransaction(async transaction => {
       for (const id of docIds) {
         const docRef = this.collection.doc(id);
         const docSnapshot = await transaction.get(docRef);
@@ -270,7 +385,11 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
   async getDocumentData(docId: string): Promise<{id: string; data: T} | null> {
     const docSnapshot = await this.getDocument(docId);
     if (docSnapshot.exists) {
-      return {id: docSnapshot.id, data: docSnapshot.data() as T};
+      const data = docSnapshot.data();
+      if (!data) {
+        return null;
+      }
+      return {id: docSnapshot.id, data};
     }
     return null;
   }
@@ -413,36 +532,53 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     docId: string,
     callback: (doc: {id: string; data: T}) => void
   ): () => void {
-    return this.collection.doc(docId).onSnapshot(
+    const unsubscribe = this.collection.doc(docId).onSnapshot(
       snapshot => {
         if (!snapshot.exists) {
           throw new Error(`Document with ID ${docId} does not exist`);
         }
-        callback({id: snapshot.id, data: snapshot.data() as T});
+        const data = snapshot.data();
+        if (!data) {
+          throw new Error(`Document with ID ${docId} has no data`);
+        }
+        try {
+          callback({id: snapshot.id, data});
+        } catch (error) {
+          console.error(
+            'Error in document subscription callback:',
+            this.getErrorMessage(error)
+          );
+          // Unsubscribe on callback error to prevent memory leaks
+          unsubscribe();
+          throw error;
+        }
       },
       error => {
         console.error(
-          'Error in collection callback:',
+          'Error in document subscription:',
           this.getErrorMessage(error)
         );
         throw error;
       }
     );
+    return unsubscribe;
   }
 
   subscribeCollection(
     callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void
   ): () => void {
-    return this.collection.onSnapshot(
+    const unsubscribe = this.collection.onSnapshot(
       snapshot => {
         try {
           callback(snapshot as admin.firestore.QuerySnapshot<T>);
         } catch (error) {
           console.error(
-            'Error in collection callback:',
+            'Error in collection subscription callback:',
             this.getErrorMessage(error)
           );
-          throw error; // Re-throwing to allow higher-level handlers to catch it
+          // Unsubscribe on callback error to prevent memory leaks
+          unsubscribe();
+          throw error;
         }
       },
       error => {
@@ -451,6 +587,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         );
       }
     );
+    return unsubscribe;
   }
 
   subscribeQuery(
@@ -458,16 +595,18 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void
   ): () => void {
     const findQuery = this.buildQuery(query);
-    return findQuery.onSnapshot(
+    const unsubscribe = findQuery.onSnapshot(
       snapshot => {
         try {
           callback(snapshot as admin.firestore.QuerySnapshot<T>);
         } catch (error) {
           console.error(
-            'Error in query callback:',
+            'Error in query subscription callback:',
             this.getErrorMessage(error)
           );
-          throw error; // Re-throwing to allow higher-level handlers to catch it
+          // Unsubscribe on callback error to prevent memory leaks
+          unsubscribe();
+          throw error;
         }
       },
       error => {
@@ -484,15 +623,24 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
         }
       }
     );
+    return unsubscribe;
   }
 
-  private isFirestoreError(error: any): error is admin.FirebaseError {
-    return error && error.code && error.message;
+  private isFirestoreError(error: unknown): error is admin.FirebaseError {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      'message' in error
+    );
   }
 
   private getErrorMessage(error: unknown): string {
     if (error instanceof Error) {
       return error.message;
+    }
+    if (typeof error === 'string') {
+      return error;
     }
     return 'Unknown error';
   }

@@ -22,54 +22,84 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-const admin = __importStar(require("firebase-admin"));
+const crypto = __importStar(require("crypto"));
+// Constants
+const DEFAULT_ID_LENGTH = 30;
+const MAX_BATCH_SIZE = 500; // Firestore transaction limit
+const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 class FirestoreHelper {
     constructor(firestoreInstance, collectionPath) {
+        this.firestoreInstance = firestoreInstance;
         this.collection = firestoreInstance.collection(collectionPath);
-        this.checkConnection().catch(error => {
-            throw new Error(`Failed to connect to Firestore: ${this.getErrorMessage(error)}`);
-        });
     }
-    checkConnection() {
-        return __awaiter(this, void 0, void 0, function* () {
-            const testDocRef = this.collection.doc('ts_firestore_admin_helper_test_connection');
-            try {
-                yield testDocRef.get();
-            }
-            catch (error) {
-                throw new Error(`Firestore connection check failed: ${this.getErrorMessage(error)}`);
-            }
-        });
+    /**
+     * Validates Firestore connection by attempting a simple read operation
+     * @throws Error if connection fails
+     */
+    async validateConnection() {
+        const testDocRef = this.collection.doc('ts_firestore_admin_helper_test_connection');
+        try {
+            await testDocRef.get();
+        }
+        catch (error) {
+            throw new Error(`Firestore connection check failed: ${this.getErrorMessage(error)}`);
+        }
     }
+    /**
+     * Generates a cryptographically secure random ID
+     */
     generateRandomId(length) {
-        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        const bytes = crypto.randomBytes(length);
         let result = '';
         for (let i = 0; i < length; i++) {
-            const randomIndex = Math.floor(Math.random() * chars.length);
-            result += chars[randomIndex];
+            const byte = bytes[i];
+            if (byte === undefined) {
+                throw new Error('Failed to generate random bytes');
+            }
+            const randomIndex = byte % ID_CHARS.length;
+            result += ID_CHARS[randomIndex];
         }
         return result;
     }
-    generateUniqueId(length) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let id;
-            let doc;
-            do {
-                id = this.generateRandomId(length);
-                doc = yield this.collection.doc(id).get();
-            } while (doc.exists);
-            return id;
-        });
+    /**
+     * Validates custom document ID format
+     */
+    validateCustomId(id) {
+        if (!id || typeof id !== 'string') {
+            throw new Error('Document ID must be a non-empty string');
+        }
+        if (id.length > 1500) {
+            throw new Error('Document ID must not exceed 1500 characters');
+        }
+        if (id.startsWith('__') && id.endsWith('__')) {
+            throw new Error('Document ID cannot start and end with double underscores');
+        }
+        // Firestore doesn't allow certain characters in document IDs
+        if (/[/]/.test(id)) {
+            throw new Error('Document ID cannot contain forward slashes');
+        }
+    }
+    /**
+     * Validates document data is not empty
+     */
+    validateDocumentData(data) {
+        if (!data || typeof data !== 'object') {
+            throw new Error('Document data must be a valid object');
+        }
+        const keys = Object.keys(data).filter(key => key !== 'createdAt' && key !== 'updatedAt');
+        if (keys.length === 0) {
+            throw new Error('Document data cannot be empty');
+        }
+    }
+    async generateUniqueId(length) {
+        let id;
+        let doc;
+        do {
+            id = this.generateRandomId(length);
+            doc = await this.collection.doc(id).get();
+        } while (doc.exists);
+        return id;
     }
     getUnixTimestamp() {
         return Date.now(); // Milliseconds since Unix epoch
@@ -89,216 +119,253 @@ class FirestoreHelper {
             throw new Error(`Invalid value for updatedAt: ${data.updatedAt}`);
         }
     }
-    addDocument(data, id, override) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const docId = id || (yield this.generateUniqueId(30));
-            const docRef = this.collection.doc(docId);
-            const result = yield admin.firestore().runTransaction((transaction) => __awaiter(this, void 0, void 0, function* () {
-                var _a;
-                const docSnapshot = yield transaction.get(docRef);
-                if (id && !(override || !docSnapshot.exists)) {
+    async addDocument(data, id, override) {
+        // Validate document data
+        this.validateDocumentData(data);
+        // Validate custom ID if provided
+        if (id) {
+            this.validateCustomId(id);
+        }
+        const docId = id || (await this.generateUniqueId(DEFAULT_ID_LENGTH));
+        const docRef = this.collection.doc(docId);
+        const result = await this.firestoreInstance.runTransaction(async (transaction) => {
+            const docSnapshot = await transaction.get(docRef);
+            if (id && !(override || !docSnapshot.exists)) {
+                throw new Error(`Document with ID ${id} already exists. Use "override: true" to replace the data.`);
+            }
+            const existingData = docSnapshot.data();
+            const timestampedData = {
+                ...data,
+                createdAt: id
+                    ? existingData?.createdAt || this.getUnixTimestamp()
+                    : this.getUnixTimestamp(),
+                updatedAt: this.getUnixTimestamp(),
+            };
+            transaction.set(docRef, timestampedData, { merge: override });
+            return { id: docId, data: timestampedData };
+        });
+        return result;
+    }
+    async editDocument(docId, data) {
+        // Validate document data
+        this.validateDocumentData(data);
+        const docRef = this.collection.doc(docId);
+        return this.firestoreInstance.runTransaction(async (transaction) => {
+            const docSnapshot = await transaction.get(docRef);
+            if (!docSnapshot.exists) {
+                throw new Error(`Document with ID ${docId} does not exist`);
+            }
+            this.validateTimestampFields(data);
+            // Prevent updating the document ID
+            if ('id' in data) {
+                throw new Error('Cannot update the document ID');
+            }
+            const timestampedData = {
+                ...data,
+                updatedAt: this.getUnixTimestamp(),
+            };
+            transaction.update(docRef, timestampedData);
+            // Merge current data with updated data to return complete document
+            const currentData = docSnapshot.data();
+            if (!currentData) {
+                throw new Error(`Document with ID ${docId} has no data`);
+            }
+            const updatedData = {
+                ...currentData,
+                ...timestampedData,
+            };
+            return { id: docSnapshot.id, data: updatedData };
+        });
+    }
+    async removeDocument(docId) {
+        const docRef = this.collection.doc(docId);
+        return this.firestoreInstance.runTransaction(async (transaction) => {
+            const docSnapshot = await transaction.get(docRef);
+            if (!docSnapshot.exists) {
+                throw new Error(`Document with ID ${docId} does not exist`);
+            }
+            transaction.delete(docRef);
+        });
+    }
+    async batchAdd(documents) {
+        if (documents.length === 0) {
+            throw new Error('Batch operation requires at least one document');
+        }
+        if (documents.length > MAX_BATCH_SIZE) {
+            throw new Error(`Batch size exceeds Firestore limit. Maximum ${MAX_BATCH_SIZE} documents allowed, received ${documents.length}`);
+        }
+        // Validate all documents and custom IDs before transaction
+        for (const { id, data } of documents) {
+            this.validateDocumentData(data);
+            if (id) {
+                this.validateCustomId(id);
+            }
+        }
+        // Generate all IDs before transaction to avoid race conditions
+        const documentsWithIds = await Promise.all(documents.map(async ({ id, data, override }) => ({
+            id: id || (await this.generateUniqueId(DEFAULT_ID_LENGTH)),
+            data,
+            override,
+        })));
+        return this.firestoreInstance.runTransaction(async (transaction) => {
+            for (const { id, data, override } of documentsWithIds) {
+                const docRef = this.collection.doc(id);
+                const docSnapshot = await transaction.get(docRef);
+                if (!(override || !docSnapshot.exists)) {
                     throw new Error(`Document with ID ${id} already exists. Use "override: true" to replace the data.`);
                 }
-                const timestampedData = Object.assign(Object.assign({}, data), { createdAt: id
-                        ? ((_a = docSnapshot.data()) === null || _a === void 0 ? void 0 : _a.createdAt) || this.getUnixTimestamp()
-                        : this.getUnixTimestamp(), updatedAt: this.getUnixTimestamp() });
+                const existingData = docSnapshot.data();
+                const timestampedData = {
+                    ...data,
+                    createdAt: existingData?.createdAt || this.getUnixTimestamp(),
+                    updatedAt: this.getUnixTimestamp(),
+                };
                 transaction.set(docRef, timestampedData, { merge: override });
-                return { id: docId, data: timestampedData };
-            }));
-            return result;
+            }
         });
     }
-    editDocument(docId, data) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const docRef = this.collection.doc(docId);
-            return admin.firestore().runTransaction((transaction) => __awaiter(this, void 0, void 0, function* () {
-                const docSnapshot = yield transaction.get(docRef);
+    async batchEdit(updates) {
+        if (updates.length === 0) {
+            throw new Error('Batch operation requires at least one document');
+        }
+        if (updates.length > MAX_BATCH_SIZE) {
+            throw new Error(`Batch size exceeds Firestore limit. Maximum ${MAX_BATCH_SIZE} documents allowed, received ${updates.length}`);
+        }
+        // Validate all updates before transaction
+        for (const { data } of updates) {
+            this.validateDocumentData(data);
+            this.validateTimestampFields(data);
+            // Prevent updating the document ID
+            if ('id' in data) {
+                throw new Error('Cannot update the document ID');
+            }
+        }
+        return this.firestoreInstance.runTransaction(async (transaction) => {
+            for (const { id, data } of updates) {
+                const docRef = this.collection.doc(id);
+                const docSnapshot = await transaction.get(docRef);
                 if (!docSnapshot.exists) {
-                    throw new Error(`Document with ID ${docId} does not exist`);
+                    throw new Error(`Document with ID ${id} does not exist`);
                 }
-                this.validateTimestampFields(data);
-                // Prevent updating the document ID
-                if ('id' in data) {
-                    throw new Error('Cannot update the document ID');
-                }
-                const timestampedData = Object.assign(Object.assign({}, data), { updatedAt: this.getUnixTimestamp() });
+                const timestampedData = {
+                    ...data,
+                    updatedAt: this.getUnixTimestamp(),
+                };
                 transaction.update(docRef, timestampedData);
-                // Fetch the updated document
-                const updatedDocSnapshot = yield docRef.get();
-                if (!updatedDocSnapshot.exists) {
-                    throw new Error(`Document with ID ${docId} does not exist after update`);
-                }
-                return { id: updatedDocSnapshot.id, data: updatedDocSnapshot.data() };
-            }));
+            }
         });
     }
-    removeDocument(docId) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const docRef = this.collection.doc(docId);
-            return admin.firestore().runTransaction((transaction) => __awaiter(this, void 0, void 0, function* () {
-                const docSnapshot = yield transaction.get(docRef);
+    async batchRemove(docIds) {
+        if (docIds.length === 0) {
+            throw new Error('Batch operation requires at least one document ID');
+        }
+        if (docIds.length > MAX_BATCH_SIZE) {
+            throw new Error(`Batch size exceeds Firestore limit. Maximum ${MAX_BATCH_SIZE} documents allowed, received ${docIds.length}`);
+        }
+        return this.firestoreInstance.runTransaction(async (transaction) => {
+            for (const id of docIds) {
+                const docRef = this.collection.doc(id);
+                const docSnapshot = await transaction.get(docRef);
                 if (!docSnapshot.exists) {
-                    throw new Error(`Document with ID ${docId} does not exist`);
+                    throw new Error(`Document with ID ${id} does not exist`);
                 }
                 transaction.delete(docRef);
-            }));
-        });
-    }
-    batchAdd(documents) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return admin.firestore().runTransaction((transaction) => __awaiter(this, void 0, void 0, function* () {
-                var _a;
-                for (const { id, data, override } of documents) {
-                    const docId = id || (yield this.generateUniqueId(30));
-                    const docRef = this.collection.doc(docId);
-                    const docSnapshot = yield transaction.get(docRef);
-                    if (id && !(override || !docSnapshot.exists)) {
-                        throw new Error(`Document with ID ${id} already exists. Use "override: true" to replace the data.`);
-                    }
-                    const timestampedData = Object.assign(Object.assign({}, data), { createdAt: id
-                            ? ((_a = docSnapshot.data()) === null || _a === void 0 ? void 0 : _a.createdAt) || this.getUnixTimestamp()
-                            : this.getUnixTimestamp(), updatedAt: this.getUnixTimestamp() });
-                    transaction.set(docRef, timestampedData, { merge: override });
-                }
-            }));
-        });
-    }
-    batchEdit(updates) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return admin.firestore().runTransaction((transaction) => __awaiter(this, void 0, void 0, function* () {
-                for (const { id, data } of updates) {
-                    const docRef = this.collection.doc(id);
-                    const docSnapshot = yield transaction.get(docRef);
-                    if (!docSnapshot.exists) {
-                        throw new Error(`Document with ID ${id} does not exist`);
-                    }
-                    this.validateTimestampFields(data);
-                    // Prevent updating the document ID
-                    if ('id' in data) {
-                        throw new Error('Cannot update the document ID');
-                    }
-                    const timestampedData = Object.assign(Object.assign({}, data), { updatedAt: this.getUnixTimestamp() });
-                    transaction.update(docRef, timestampedData);
-                }
-            }));
-        });
-    }
-    batchRemove(docIds) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return admin.firestore().runTransaction((transaction) => __awaiter(this, void 0, void 0, function* () {
-                for (const id of docIds) {
-                    const docRef = this.collection.doc(id);
-                    const docSnapshot = yield transaction.get(docRef);
-                    if (!docSnapshot.exists) {
-                        throw new Error(`Document with ID ${id} does not exist`);
-                    }
-                    transaction.delete(docRef);
-                }
-            }));
-        });
-    }
-    getDocument(docId) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.collection.doc(docId).get();
-        });
-    }
-    getDocumentData(docId) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const docSnapshot = yield this.getDocument(docId);
-            if (docSnapshot.exists) {
-                return { id: docSnapshot.id, data: docSnapshot.data() };
-            }
-            return null;
-        });
-    }
-    findDocuments(query, options) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const findQuery = this.buildQuery(query);
-            let firestoreQuery = findQuery;
-            if (options === null || options === void 0 ? void 0 : options.orderBy) {
-                firestoreQuery = firestoreQuery.orderBy(options.orderBy, options.orderDirection || 'asc');
-            }
-            if (options === null || options === void 0 ? void 0 : options.limit) {
-                firestoreQuery = firestoreQuery.limit(options.limit);
-            }
-            if (options === null || options === void 0 ? void 0 : options.startAfterId) {
-                const startAfterDoc = yield this.collection
-                    .doc(options.startAfterId)
-                    .get();
-                if (!startAfterDoc.exists) {
-                    throw new Error(`Document with ID ${options.startAfterId} does not exist`);
-                }
-                firestoreQuery = firestoreQuery.startAfter(startAfterDoc);
-            }
-            try {
-                return yield firestoreQuery.get();
-            }
-            catch (error) {
-                if (this.isFirestoreError(error) &&
-                    error.code === 'failed-precondition') {
-                    const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
-                    throw new Error(message);
-                }
-                else {
-                    throw new Error(`Failed to get documents: ${this.getErrorMessage(error)}`);
-                }
             }
         });
     }
-    findDocument(query) {
-        return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b;
-            const findQuery = this.buildQuery(query);
-            const firestoreQuery = findQuery.limit(1);
-            try {
-                const doc = ((_b = (_a = (yield firestoreQuery.get())) === null || _a === void 0 ? void 0 : _a.docs) === null || _b === void 0 ? void 0 : _b[0]) || null;
-                return doc;
-            }
-            catch (error) {
-                if (this.isFirestoreError(error) &&
-                    error.code === 'failed-precondition') {
-                    const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
-                    throw new Error(message);
-                }
-                else {
-                    throw new Error(`Failed to get documents: ${this.getErrorMessage(error)}`);
-                }
-            }
-        });
+    async getDocument(docId) {
+        return this.collection.doc(docId).get();
     }
-    findDocumentsData(query, options) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const localOptions = {};
-            if (options === null || options === void 0 ? void 0 : options.limit) {
-                localOptions.limit = options.limit;
+    async getDocumentData(docId) {
+        const docSnapshot = await this.getDocument(docId);
+        if (docSnapshot.exists) {
+            const data = docSnapshot.data();
+            if (!data) {
+                return null;
             }
-            if (options === null || options === void 0 ? void 0 : options.orderBy) {
-                localOptions.orderBy = options.orderBy;
+            return { id: docSnapshot.id, data };
+        }
+        return null;
+    }
+    async findDocuments(query, options) {
+        const findQuery = this.buildQuery(query);
+        let firestoreQuery = findQuery;
+        if (options?.orderBy) {
+            firestoreQuery = firestoreQuery.orderBy(options.orderBy, options.orderDirection || 'asc');
+        }
+        if (options?.limit) {
+            firestoreQuery = firestoreQuery.limit(options.limit);
+        }
+        if (options?.startAfterId) {
+            const startAfterDoc = await this.collection
+                .doc(options.startAfterId)
+                .get();
+            if (!startAfterDoc.exists) {
+                throw new Error(`Document with ID ${options.startAfterId} does not exist`);
             }
-            if (options === null || options === void 0 ? void 0 : options.orderDirection) {
-                localOptions.orderDirection = options.orderDirection;
+            firestoreQuery = firestoreQuery.startAfter(startAfterDoc);
+        }
+        try {
+            return await firestoreQuery.get();
+        }
+        catch (error) {
+            if (this.isFirestoreError(error) &&
+                error.code === 'failed-precondition') {
+                const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
+                throw new Error(message);
             }
-            if (options === null || options === void 0 ? void 0 : options.startAfterId) {
-                localOptions.startAfterId = options.startAfterId;
+            else {
+                throw new Error(`Failed to get documents: ${this.getErrorMessage(error)}`);
             }
-            const querySnapshot = yield this.findDocuments(query, localOptions);
-            return ((querySnapshot === null || querySnapshot === void 0 ? void 0 : querySnapshot.docs) || []).map(doc => ({
+        }
+    }
+    async findDocument(query) {
+        const findQuery = this.buildQuery(query);
+        const firestoreQuery = findQuery.limit(1);
+        try {
+            const doc = (await firestoreQuery.get())?.docs?.[0] || null;
+            return doc;
+        }
+        catch (error) {
+            if (this.isFirestoreError(error) &&
+                error.code === 'failed-precondition') {
+                const message = `Firestore index is required for this query. Please create the necessary index. ${this.getErrorMessage(error)}`;
+                throw new Error(message);
+            }
+            else {
+                throw new Error(`Failed to get documents: ${this.getErrorMessage(error)}`);
+            }
+        }
+    }
+    async findDocumentsData(query, options) {
+        const localOptions = {};
+        if (options?.limit) {
+            localOptions.limit = options.limit;
+        }
+        if (options?.orderBy) {
+            localOptions.orderBy = options.orderBy;
+        }
+        if (options?.orderDirection) {
+            localOptions.orderDirection = options.orderDirection;
+        }
+        if (options?.startAfterId) {
+            localOptions.startAfterId = options.startAfterId;
+        }
+        const querySnapshot = await this.findDocuments(query, localOptions);
+        return (querySnapshot?.docs || []).map(doc => ({
+            id: doc.id,
+            data: doc.data(),
+        }));
+    }
+    async findDocumentData(query) {
+        const doc = await this.findDocument(query);
+        if (doc?.exists) {
+            return {
                 id: doc.id,
                 data: doc.data(),
-            }));
-        });
-    }
-    findDocumentData(query) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const doc = yield this.findDocument(query);
-            if (doc === null || doc === void 0 ? void 0 : doc.exists) {
-                return {
-                    id: doc.id,
-                    data: doc.data(),
-                };
-            }
-            return null;
-        });
+            };
+        }
+        return null;
     }
     buildQuery(filters) {
         let query = this.collection;
@@ -308,38 +375,56 @@ class FirestoreHelper {
         return query;
     }
     subscribeDocument(docId, callback) {
-        return this.collection.doc(docId).onSnapshot(snapshot => {
+        const unsubscribe = this.collection.doc(docId).onSnapshot(snapshot => {
             if (!snapshot.exists) {
                 throw new Error(`Document with ID ${docId} does not exist`);
             }
-            callback({ id: snapshot.id, data: snapshot.data() });
+            const data = snapshot.data();
+            if (!data) {
+                throw new Error(`Document with ID ${docId} has no data`);
+            }
+            try {
+                callback({ id: snapshot.id, data });
+            }
+            catch (error) {
+                console.error('Error in document subscription callback:', this.getErrorMessage(error));
+                // Unsubscribe on callback error to prevent memory leaks
+                unsubscribe();
+                throw error;
+            }
         }, error => {
-            console.error('Error in collection callback:', this.getErrorMessage(error));
+            console.error('Error in document subscription:', this.getErrorMessage(error));
             throw error;
         });
+        return unsubscribe;
     }
     subscribeCollection(callback) {
-        return this.collection.onSnapshot(snapshot => {
+        const unsubscribe = this.collection.onSnapshot(snapshot => {
             try {
                 callback(snapshot);
             }
             catch (error) {
-                console.error('Error in collection callback:', this.getErrorMessage(error));
-                throw error; // Re-throwing to allow higher-level handlers to catch it
+                console.error('Error in collection subscription callback:', this.getErrorMessage(error));
+                // Unsubscribe on callback error to prevent memory leaks
+                unsubscribe();
+                throw error;
             }
         }, error => {
             throw new Error(`Failed to subscribe to collection: ${this.getErrorMessage(error)}`);
         });
+        return unsubscribe;
     }
     subscribeQuery(query, callback) {
         const findQuery = this.buildQuery(query);
-        return findQuery.onSnapshot(snapshot => {
+        const unsubscribe = findQuery.onSnapshot(snapshot => {
             try {
                 callback(snapshot);
             }
             catch (error) {
-                console.error('Error in query callback:', this.getErrorMessage(error));
-                throw error; // Re-throwing to allow higher-level handlers to catch it
+                console.error('Error in query subscription callback:', this.getErrorMessage(error));
+                // Unsubscribe on callback error to prevent memory leaks
+                unsubscribe();
+                throw error;
             }
         }, error => {
             if (this.isFirestoreError(error) &&
@@ -351,13 +436,20 @@ class FirestoreHelper {
                 throw new Error(`Failed to subscribe to query: ${this.getErrorMessage(error)}`);
             }
         });
+        return unsubscribe;
     }
     isFirestoreError(error) {
-        return error && error.code && error.message;
+        return (typeof error === 'object' &&
+            error !== null &&
+            'code' in error &&
+            'message' in error);
     }
     getErrorMessage(error) {
         if (error instanceof Error) {
             return error.message;
+        }
+        if (typeof error === 'string') {
+            return error;
         }
         return 'Unknown error';
     }

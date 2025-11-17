@@ -3,6 +3,18 @@
   "version": "1.2.3",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "lint": "gts lint",
@@ -13,11 +25,32 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": [],
-  "author": "Rukanda Faridsi",
+  "keywords": [
+    "firestore",
+    "firebase",
+    "admin",
+    "helper",
+    "typescript",
+    "type-safe",
+    "database"
+  ],
+  "author": {
+    "name": "Rukanda Faridsi",
+    "email": "rukanda.agen@gmail.com",
+    "url": "https://github.com/rukandax"
+  },
   "license": "MIT",
   "description": "Typesafe Firestore Admin Helper",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rukandax/ts-firestore-admin-helper.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rukandax/ts-firestore-admin-helper/issues"
+  },
+  "homepage": "https://github.com/rukandax/ts-firestore-admin-helper#readme",
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "gts": "^5.3.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"

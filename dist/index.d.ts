@@ -6,7 +6,7 @@ interface BaseDocument {
 type QueryPayload<T> = {
     field: keyof T;
     operator: FirebaseFirestore.WhereFilterOp;
-    value: any;
+    value: T[keyof T] | T[keyof T][] | boolean | null;
 };
 type QueryOptions<T> = {
     orderBy?: keyof T;
@@ -16,9 +16,25 @@ type QueryOptions<T> = {
 };
 export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     private collection;
+    private firestoreInstance;
     constructor(firestoreInstance: admin.firestore.Firestore, collectionPath: string);
-    private checkConnection;
+    /**
+     * Validates Firestore connection by attempting a simple read operation
+     * @throws Error if connection fails
+     */
+    validateConnection(): Promise<void>;
+    /**
+     * Generates a cryptographically secure random ID
+     */
     private generateRandomId;
+    /**
+     * Validates custom document ID format
+     */
+    private validateCustomId;
+    /**
+     * Validates document data is not empty
+     */
+    private validateDocumentData;
     private generateUniqueId;
     private getUnixTimestamp;
     private validateUnixTimestamp;
