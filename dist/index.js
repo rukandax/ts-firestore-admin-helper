@@ -81,7 +81,7 @@ class FirestoreHelper {
         this.idLength = options?.idLength ?? DEFAULT_ID_LENGTH;
     }
     /**
-     * Validates Firestore connection by attempting a simple read operation
+     * Validates Firestore connection by attempting a simple read operation.
      * @throws Error if connection fails
      */
     async validateConnection() {
@@ -171,8 +171,7 @@ class FirestoreHelper {
         }
     }
     /**
-     * Removes fields with undefined values from an object
-     * This prevents Firestore errors when saving documents with undefined fields
+     * Removes fields with undefined values from an object.
      * @param data - Object to clean
      * @returns New object without undefined fields
      */
@@ -186,8 +185,7 @@ class FirestoreHelper {
         return cleaned;
     }
     /**
-     * Extracts fields with undefined values and marks them for deletion in Firestore
-     * Used in update operations to delete fields when value is undefined
+     * Extracts fields with undefined values and marks them for deletion in Firestore.
      * @param data - Object to process
      * @returns Object with FieldValue.delete() for undefined fields
      */
@@ -200,6 +198,13 @@ class FirestoreHelper {
         }
         return fieldsToDelete;
     }
+    /**
+     * Adds a new document to the collection.
+     * @param data - Document data to add
+     * @param id - Optional custom document ID
+     * @param override - Whether to override existing document with same ID
+     * @returns Object containing document ID and data
+     */
     async addDocument(data, id, override) {
         // Remove undefined fields before validation and saving
         const cleanedData = this.removeUndefinedFields(data);
@@ -236,6 +241,12 @@ class FirestoreHelper {
         });
         return result;
     }
+    /**
+     * Updates an existing document in the collection.
+     * @param docId - Document ID to update
+     * @param data - Data to update (undefined values delete fields)
+     * @returns Object containing document ID and updated data
+     */
     async editDocument(docId, data) {
         // Extract fields to delete (undefined values)
         const fieldsToDelete = this.extractUndefinedFields(data);
@@ -280,6 +291,10 @@ class FirestoreHelper {
             return { id: docSnapshot.id, data: updatedData };
         });
     }
+    /**
+     * Removes a document from the collection.
+     * @param docId - Document ID to remove
+     */
     async removeDocument(docId) {
         const docRef = this.collection.doc(docId);
         return this.firestoreInstance.runTransaction(async (transaction) => {
@@ -290,6 +305,10 @@ class FirestoreHelper {
             transaction.delete(docRef);
         });
     }
+    /**
+     * Adds multiple documents in a single batch operation.
+     * @param documents - Array of documents to add
+     */
     async batchAdd(documents) {
         if (documents.length === 0) {
             throw new Error('Batch operation requires at least one document');
@@ -341,6 +360,10 @@ class FirestoreHelper {
             }
         });
     }
+    /**
+     * Updates multiple documents in a single batch operation.
+     * @param updates - Array of document updates
+     */
     async batchEdit(updates) {
         if (updates.length === 0) {
             throw new Error('Batch operation requires at least one document');
@@ -381,6 +404,10 @@ class FirestoreHelper {
             }
         });
     }
+    /**
+     * Removes multiple documents in a single batch operation.
+     * @param docIds - Array of document IDs to remove
+     */
     async batchRemove(docIds) {
         if (docIds.length === 0) {
             throw new Error('Batch operation requires at least one document ID');
@@ -400,15 +427,9 @@ class FirestoreHelper {
         });
     }
     /**
-     * Batch add documents with automatic chunking for large datasets (>500 documents)
-     * Automatically splits the operation into multiple batches
-     *
+     * Batch add documents with automatic chunking for large datasets (>500 documents).
      * @param documents - Array of documents to add
      * @returns Promise that resolves when all documents are added
-     *
-     * @example
-     * // Add 1000 documents (will be split into 2 batches)
-     * await collection.batchAddLarge(largeDocumentArray);
      */
     async batchAddLarge(documents) {
         if (documents.length === 0) {
@@ -432,15 +453,9 @@ class FirestoreHelper {
         }
     }
     /**
-     * Batch edit documents with automatic chunking for large datasets (>500 documents)
-     * Automatically splits the operation into multiple batches
-     *
+     * Batch edit documents with automatic chunking for large datasets (>500 documents).
      * @param updates - Array of document updates
      * @returns Promise that resolves when all documents are updated
-     *
-     * @example
-     * // Update 1000 documents
-     * await collection.batchEditLarge(largeUpdateArray);
      */
     async batchEditLarge(updates) {
         if (updates.length === 0) {
@@ -464,15 +479,9 @@ class FirestoreHelper {
         }
     }
     /**
-     * Batch remove documents with automatic chunking for large datasets (>500 documents)
-     * Automatically splits the operation into multiple batches
-     *
+     * Batch remove documents with automatic chunking for large datasets (>500 documents).
      * @param docIds - Array of document IDs to remove
      * @returns Promise that resolves when all documents are removed
-     *
-     * @example
-     * // Remove 1000 documents
-     * await collection.batchRemoveLarge(largeIdArray);
      */
     async batchRemoveLarge(docIds) {
         if (docIds.length === 0) {
@@ -495,9 +504,19 @@ class FirestoreHelper {
             }
         }
     }
+    /**
+     * Gets a document snapshot from the collection.
+     * @param docId - Document ID to retrieve
+     * @returns Document snapshot
+     */
     async getDocument(docId) {
         return this.collection.doc(docId).get();
     }
+    /**
+     * Gets document data from the collection.
+     * @param docId - Document ID to retrieve
+     * @returns Object containing document ID and data, or null if not found
+     */
     async getDocumentData(docId) {
         const docSnapshot = await this.getDocument(docId);
         if (docSnapshot.exists) {
@@ -510,7 +529,7 @@ class FirestoreHelper {
         return null;
     }
     /**
-     * Executes a Firestore query with proper error handling
+     * Executes a Firestore query with proper error handling.
      * @param query - The Firestore query to execute
      * @param operation - The operation to perform on the query
      * @returns Result from the operation
@@ -527,6 +546,12 @@ class FirestoreHelper {
             throw new Error(`Query execution failed: ${this.getErrorMessage(error)}`);
         }
     }
+    /**
+     * Finds documents matching the given query.
+     * @param query - Array of query conditions
+     * @param options - Query options (orderBy, limit, etc.)
+     * @returns Query snapshot containing matching documents
+     */
     async findDocuments(query, options) {
         const findQuery = this.buildQuery(query);
         let firestoreQuery = findQuery;
@@ -557,6 +582,11 @@ class FirestoreHelper {
         }
         return this.executeQuery(firestoreQuery, async (q) => await q.get());
     }
+    /**
+     * Finds the first document matching the given query.
+     * @param query - Array of query conditions
+     * @returns First matching document snapshot, or null if none found
+     */
     async findDocument(query) {
         const findQuery = this.buildQuery(query);
         const firestoreQuery = findQuery.limit(1);
@@ -565,6 +595,12 @@ class FirestoreHelper {
             return result?.docs?.[0] || null;
         });
     }
+    /**
+     * Finds documents matching the given query and returns their data.
+     * @param query - Array of query conditions
+     * @param options - Query options (orderBy, limit, etc.)
+     * @returns Array of objects containing document ID and data
+     */
     async findDocumentsData(query, options) {
         const localOptions = {};
         if (options?.limit) {
@@ -585,6 +621,11 @@ class FirestoreHelper {
             data: doc.data(),
         }));
     }
+    /**
+     * Finds the first document matching the given query and returns its data.
+     * @param query - Array of query conditions
+     * @returns Object containing document ID and data, or null if none found
+     */
     async findDocumentData(query) {
         const doc = await this.findDocument(query);
         if (doc?.exists) {
@@ -595,6 +636,11 @@ class FirestoreHelper {
         }
         return null;
     }
+    /**
+     * Builds a Firestore query from the given conditions.
+     * @param filters - Array of query conditions
+     * @returns Firestore query object
+     */
     buildQuery(filters) {
         // Validate query constraints before building
         this.validateQueryConstraints(filters);
@@ -613,6 +659,13 @@ class FirestoreHelper {
         });
         return query;
     }
+    /**
+     * Subscribes to changes on a specific document.
+     * @param docId - Document ID to subscribe to
+     * @param callback - Callback function called on document changes
+     * @param errorCallback - Optional error callback
+     * @returns Unsubscribe function
+     */
     subscribeDocument(docId, callback, errorCallback) {
         const unsubscribe = this.collection.doc(docId).onSnapshot(snapshot => {
             if (!snapshot.exists) {
@@ -651,6 +704,12 @@ class FirestoreHelper {
         });
         return unsubscribe;
     }
+    /**
+     * Subscribes to changes on the entire collection.
+     * @param callback - Callback function called on collection changes
+     * @param errorCallback - Optional error callback
+     * @returns Unsubscribe function
+     */
     subscribeCollection(callback, errorCallback) {
         const unsubscribe = this.collection.onSnapshot(snapshot => {
             try {
@@ -672,6 +731,13 @@ class FirestoreHelper {
         });
         return unsubscribe;
     }
+    /**
+     * Subscribes to changes on documents matching a query.
+     * @param query - Array of query conditions
+     * @param callback - Callback function called on query result changes
+     * @param errorCallback - Optional error callback
+     * @returns Unsubscribe function
+     */
     subscribeQuery(query, callback, errorCallback) {
         const findQuery = this.buildQuery(query);
         const unsubscribe = findQuery.onSnapshot(snapshot => {
@@ -702,7 +768,7 @@ class FirestoreHelper {
         return unsubscribe;
     }
     /**
-     * Helper method to get document reference for use in custom transactions
+     * Helper method to get document reference for use in custom transactions.
      * @param docId - Document ID
      * @returns Document reference
      */
@@ -710,23 +776,11 @@ class FirestoreHelper {
         return this.collection.doc(docId);
     }
     /**
-     * Performs an atomic increment/decrement operation on a numeric field
-     * Useful for counters, balances, inventory counts, etc.
-     *
+     * Performs an atomic increment/decrement operation on a numeric field.
      * @param docId - Document ID
      * @param field - Field name to increment/decrement
      * @param value - Amount to increment (positive) or decrement (negative)
      * @returns Updated document data
-     *
-     * @example
-     * // Increment view count
-     * await collection.atomicIncrement('post-123', 'viewCount', 1);
-     *
-     * // Decrement stock
-     * await collection.atomicIncrement('product-456', 'stock', -5);
-     *
-     * // Add to balance
-     * await collection.atomicIncrement('user-789', 'balance', 100);
      */
     async atomicIncrement(docId, field, value) {
         const docRef = this.collection.doc(docId);
@@ -758,29 +812,15 @@ class FirestoreHelper {
         });
     }
     /**
-     * Conditionally updates a document based on current field value
-     * Useful for implementing optimistic locking or state-based updates
-     *
+     * Conditionally updates a document based on query conditions.
      * @param docId - Document ID
-     * @param field - Field to check
-     * @param expectedValue - Expected current value
-     * @param newData - Data to update if condition matches
-     * @returns Updated document data or null if condition not met
-     *
-     * @example
-     * // Update only if status is 'pending'
-     * const result = await collection.conditionalUpdate(
-     *   'order-123',
-     *   'status',
-     *   'pending',
-     *   { status: 'processing', processingStartedAt: Date.now() }
-     * );
-     *
-     * if (!result) {
-     *   console.log('Order is no longer pending');
-     * }
+     * @param conditions - Array of query conditions that must all be met
+     * @param newData - Data to update if all conditions match
+     * @returns Updated document data or null if conditions not met
      */
-    async conditionalUpdate(docId, field, expectedValue, newData) {
+    async conditionalUpdate(docId, conditions, newData) {
+        // Validate query constraints for consistency with other query methods
+        this.validateQueryConstraints(conditions);
         const docRef = this.collection.doc(docId);
         return this.firestoreInstance.runTransaction(async (transaction) => {
             const docSnapshot = await transaction.get(docRef);
@@ -791,32 +831,104 @@ class FirestoreHelper {
             if (!currentData) {
                 throw new Error(`Document with ID ${docId} has no data`);
             }
-            // Check condition
-            if (currentData[field] !== expectedValue) {
-                return null; // Condition not met
+            // Check all conditions
+            for (const condition of conditions) {
+                const fieldValue = currentData[condition.field];
+                const expectedValue = condition.value;
+                const operator = condition.operator;
+                let conditionMet = false;
+                switch (operator) {
+                    case '==':
+                        conditionMet = fieldValue === expectedValue;
+                        break;
+                    case '!=':
+                        conditionMet = fieldValue !== expectedValue;
+                        break;
+                    case '<':
+                        conditionMet =
+                            typeof fieldValue === 'number' &&
+                                typeof expectedValue === 'number' &&
+                                fieldValue < expectedValue;
+                        break;
+                    case '<=':
+                        conditionMet =
+                            typeof fieldValue === 'number' &&
+                                typeof expectedValue === 'number' &&
+                                fieldValue <= expectedValue;
+                        break;
+                    case '>':
+                        conditionMet =
+                            typeof fieldValue === 'number' &&
+                                typeof expectedValue === 'number' &&
+                                fieldValue > expectedValue;
+                        break;
+                    case '>=':
+                        conditionMet =
+                            typeof fieldValue === 'number' &&
+                                typeof expectedValue === 'number' &&
+                                fieldValue >= expectedValue;
+                        break;
+                    case 'in':
+                        conditionMet =
+                            Array.isArray(expectedValue) &&
+                                expectedValue.includes(fieldValue);
+                        break;
+                    case 'not-in':
+                        conditionMet =
+                            Array.isArray(expectedValue) &&
+                                !expectedValue.includes(fieldValue);
+                        break;
+                    case 'array-contains':
+                        conditionMet =
+                            Array.isArray(fieldValue) && fieldValue.includes(expectedValue);
+                        break;
+                    case 'array-contains-any':
+                        conditionMet =
+                            Array.isArray(fieldValue) &&
+                                Array.isArray(expectedValue) &&
+                                expectedValue.some(val => fieldValue.includes(val));
+                        break;
+                    default:
+                        throw new Error(`Unsupported operator: ${operator}`);
+                }
+                if (!conditionMet) {
+                    return null; // Condition not met
+                }
             }
-            // Validate update data
-            this.validateDocumentData(newData);
-            this.validateTimestampFields(newData);
+            // Extract undefined fields and clean data
+            const fieldsToDelete = this.extractUndefinedFields(newData);
+            const cleanedData = this.removeUndefinedFields(newData);
+            // Validate update data (only if there are non-undefined fields)
+            if (Object.keys(cleanedData).length > 0) {
+                this.validateDocumentData(cleanedData);
+            }
+            this.validateTimestampFields(cleanedData);
             // Prevent updating the document ID
-            if ('id' in newData) {
+            if ('id' in cleanedData) {
                 throw new Error('Cannot update the document ID');
             }
+            // Merge cleaned data with fields to delete
             const timestampedData = {
-                ...newData,
+                ...cleanedData,
+                ...fieldsToDelete,
                 updatedAt: this.getUnixTimestamp(),
             };
             transaction.update(docRef, timestampedData);
+            // Merge current data with updated data to return complete document
             const updatedData = {
                 ...currentData,
-                ...timestampedData,
+                ...cleanedData,
             };
+            // Remove deleted fields from the final result
+            for (const key in fieldsToDelete) {
+                delete updatedData[key];
+            }
             return { id: docId, data: updatedData };
         });
     }
     /**
-     * Validates query against Firestore constraints
-     * Throws QueryValidationError if constraints are violated
+     * Validates query against Firestore constraints.
+     * @throws QueryValidationError if constraints are violated
      */
     validateQueryConstraints(query) {
         const operators = query.map(q => q.operator);

@@ -4,28 +4,23 @@ A type-safe, developer-friendly wrapper for Firebase Admin Firestore operations 
 
 [![npm version](https://badge.fury.io/js/ts-firestore-admin-helper.svg)](https://www.npmjs.com/package/ts-firestore-admin-helper)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org/)
 
-## Features
+## Setup
 
-✅ **Type-Safe Operations** - Full TypeScript support with generic types  
-✅ **Automatic Timestamps** - Auto-managed `createdAt` and `updatedAt` fields  
-✅ **Transaction Support** - Built-in transaction handling for all operations  
-✅ **Batch Operations** - Efficient bulk operations with validation  
-✅ **Query Builder** - Type-safe query construction  
-✅ **Real-time Subscriptions** - Easy-to-use snapshot listeners  
-✅ **Atomic Operations** - Increment/decrement and conditional updates  
-✅ **Validation** - Built-in data and ID validation  
-✅ **Custom Transactions** - Full control for complex use cases
-
-## Installation
+### Installation
 
 ```bash
 npm install ts-firestore-admin-helper firebase-admin
 ```
 
-## Quick Start
+**Requirements:**
+- Node.js >= 18
+- Firebase Admin SDK
 
-### 1. Initialize Firebase Admin
+### Initial Configuration
+
+#### 1. Initialize Firebase Admin
 
 ```typescript
 import admin from 'firebase-admin';
@@ -39,26 +34,27 @@ admin.initializeApp({
 const db = admin.firestore();
 ```
 
-### 2. Define Your Document Interface
+#### 2. Define Document Interface
 
 ```typescript
 interface User {
   name: string;
   email: string;
   age: number;
+  status: 'active' | 'inactive';
   createdAt?: number;  // Auto-managed
   updatedAt?: number;  // Auto-managed
 }
 ```
 
-### 3. Create a Collection Helper
+#### 3. Create Collection Helper
 
 ```typescript
 const usersCollection = new FirestoreHelper<User>(db, 'users');
 
 // With custom logger (Winston, Pino, etc.)
 const usersWithLogger = new FirestoreHelper<User>(db, 'users', {
-  logger: myWinstonLogger,  // Any logger with debug, info, warn, error methods
+  logger: myWinstonLogger,  // Logger with debug, info, warn, error methods
   debug: true               // Enable debug logging
 });
 
@@ -68,516 +64,784 @@ const usersSilent = new FirestoreHelper<User>(db, 'users', {
 });
 ```
 
-[**📚 See Custom Logger Examples →**](./examples/custom-logger.ts)
-
-### 4. Start Using It!
+#### 4. Start Using
 
 ```typescript
-// Add a document
+// Add document
 const user = await usersCollection.addDocument({
   name: 'John Doe',
   email: 'john@example.com',
   age: 30,
+  status: 'active'
 });
 
-// Get a document
-const userData = await usersCollection.getDocumentData('user-id');
+// Get document
+const userData = await usersCollection.getDocumentData(user.id);
 
-// Update a document
-await usersCollection.editDocument('user-id', {
+// Update document
+await usersCollection.editDocument(user.id, {
   age: 31,
+  status: 'inactive'
 });
 
-// Delete a document
-await usersCollection.removeDocument('user-id');
+// Delete document
+await usersCollection.removeDocument(user.id);
 ```
 
-## Basic Operations
+## Advantages
 
-### Adding Documents
+### Technical Advantages
 
+- **Full Type Safety** - Supports TypeScript with generic types
+- **Automatic Timestamps** - `createdAt` and `updatedAt` fields managed automatically
+- **Transaction Support** - Built-in transaction handling for all operations
+- **Automatic Validation** - Data validation, ID validation, and query constraints
+- **Error Handling** - Consistent and informative error handling
+- **Memory Efficient** - Automatic cleanup of undefined values
+- **Developer Experience** - Intuitive and easy-to-use API
+
+### Productivity Advantages
+
+- **Rapid Development** - Quick setup and simple API
+- **Built-in Best Practices** - Already follows Firestore best practices
+- **Comprehensive Logging** - Integrated logging with various logger libraries
+- **Real-time Ready** - Built-in subscriptions for real-time updates
+- **Batch Operations** - Efficient bulk operations with auto-chunking
+- **Atomic Operations** - Increment/decrement and conditional updates
+
+### Performance Advantages
+
+- **Optimized Queries** - Query validation prevents invalid queries
+- **Efficient Batching** - Auto-chunking for large operations
+- **Connection Pooling** - Uses Firebase Admin SDK connection pooling
+- **Memory Management** - Automatic cleanup and garbage collection
+
+## Features
+
+### Document Operations
+
+#### Basic CRUD
 ```typescript
-// Auto-generated ID
-const result = await usersCollection.addDocument({
-  name: 'Jane Smith',
-  email: 'jane@example.com',
-  age: 28,
-});
-console.log(result.id); // Auto-generated ID
+// Create
+const doc = await collection.addDocument(data, customId?, override?);
 
-// Custom ID
-await usersCollection.addDocument(
-  {
-    name: 'Bob Wilson',
-    email: 'bob@example.com',
-    age: 35,
-  },
-  'custom-user-id'
-);
+// Read
+const snapshot = await collection.getDocument(docId);
+const data = await collection.getDocumentData(docId);
 
-// Override existing document
-await usersCollection.addDocument(
-  {
-    name: 'Updated Name',
-    email: 'updated@example.com',
-    age: 40,
-  },
-  'existing-id',
-  true // override flag
+// Update
+await collection.editDocument(docId, updates);
+
+// Delete
+await collection.removeDocument(docId);
+```
+
+#### Special Operations
+```typescript
+// Atomic increment/decrement
+await collection.atomicIncrement('doc-id', 'counter', 1);
+
+// Conditional update
+const result = await collection.conditionalUpdate(
+  'doc-id',
+  [{ field: 'status', operator: '==', value: 'pending' }],
+  { status: 'processed' }
 );
 ```
 
-### Querying Documents
+### Query Operations
 
+#### Basic Queries
 ```typescript
-// Find multiple documents with single orderBy
-const adults = await usersCollection.findDocumentsData(
-  [
-    { field: 'age', operator: '>=', value: 18 },
-    { field: 'email', operator: '!=', value: null },
-  ],
+// Simple query
+const activeUsers = await usersCollection.findDocumentsData([
+  { field: 'status', operator: '==', value: 'active' }
+]);
+
+// Complex query
+const adults = await usersCollection.findDocumentsData([
+  { field: 'status', operator: '==', value: 'active' },
+  { field: 'age', operator: '>=', value: 18 }
+]);
+
+// Range query
+const workingAge = await usersCollection.findDocumentsData([
+  { field: 'age', operator: '>=', value: 18 },
+  { field: 'age', operator: '<=', value: 65 }
+]);
+```
+
+#### Supported Query Operators
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `==` | Equal to | `{ field: 'status', operator: '==', value: 'active' }` |
+| `!=` | Not equal to | `{ field: 'status', operator: '!=', value: 'deleted' }` |
+| `<` | Less than | `{ field: 'age', operator: '<', value: 18 }` |
+| `<=` | Less than or equal | `{ field: 'stock', operator: '<=', value: 0 }` |
+| `>` | Greater than | `{ field: 'price', operator: '>', value: 100 }` |
+| `>=` | Greater than or equal | `{ field: 'quantity', operator: '>=', value: 10 }` |
+| `in` | Value in array | `{ field: 'status', operator: 'in', value: ['pending', 'processing'] }` |
+| `not-in` | Value not in array | `{ field: 'status', operator: 'not-in', value: ['deleted', 'archived'] }` |
+| `array-contains` | Array contains value | `{ field: 'tags', operator: 'array-contains', value: 'urgent' }` |
+| `array-contains-any` | Array contains any value | `{ field: 'tags', operator: 'array-contains-any', value: ['bug', 'critical'] }` |
+
+#### Query with Options
+```typescript
+const recentUsers = await usersCollection.findDocumentsData(
+  [{ field: 'status', operator: '==', value: 'active' }],
   {
-    orderBy: 'age',
+    orderBy: 'createdAt',
     orderDirection: 'desc',
     limit: 10,
+    startAfterId: 'last-doc-id'
   }
 );
 
-// Find with multiple orderBy fields (requires composite index)
-const users = await usersCollection.findDocumentsData(
+// Multi-field ordering
+const sortedUsers = await usersCollection.findDocumentsData(
   [{ field: 'status', operator: '==', value: 'active' }],
   {
     orderBy: [
-      { field: 'age', direction: 'asc' },
+      { field: 'priority', direction: 'desc' },
       { field: 'createdAt', direction: 'desc' }
     ],
     limit: 20
   }
 );
-
-// Find single document
-const user = await usersCollection.findDocumentData([
-  { field: 'email', operator: '==', value: 'john@example.com' },
-]);
 ```
 
 ### Batch Operations
 
+#### Batch CRUD
 ```typescript
 // Batch add
 await usersCollection.batchAdd([
-  {
-    data: { name: 'User 1', email: 'user1@example.com', age: 25 },
-  },
-  {
-    id: 'custom-id-2',
-    data: { name: 'User 2', email: 'user2@example.com', age: 30 },
-  },
+  { data: { name: 'John', email: 'john@example.com' } },
+  { data: { name: 'Jane', email: 'jane@example.com' } },
+  { id: 'custom-id', data: { name: 'Bob', email: 'bob@example.com' } }
 ]);
 
 // Batch update
 await usersCollection.batchEdit([
-  { id: 'user-1', data: { age: 26 } },
-  { id: 'user-2', data: { age: 31 } },
+  { id: 'user-1', data: { status: 'active' } },
+  { id: 'user-2', data: { status: 'inactive' } }
 ]);
 
 // Batch delete
 await usersCollection.batchRemove(['user-1', 'user-2', 'user-3']);
 ```
 
+#### Large Data Batch Operations
+```typescript
+// Auto-chunking for large datasets (>500 documents)
+await usersCollection.batchAddLarge(largeUserArray);
+await usersCollection.batchEditLarge(largeUpdateArray);
+await usersCollection.batchRemoveLarge(largeIdArray);
+```
+
 ### Real-time Subscriptions
 
+#### Document Subscription
 ```typescript
-// Subscribe to a document
-const unsubscribe = usersCollection.subscribeDocument('user-id', (doc) => {
-  console.log('Updated user:', doc.data);
-});
-
-// Subscribe to a query
-const unsubscribeQuery = usersCollection.subscribeQuery(
-  [{ field: 'age', operator: '>=', value: 18 }],
-  (snapshot) => {
-    snapshot.forEach((doc) => {
-      console.log(doc.id, doc.data());
-    });
-  }
+const unsubscribe = usersCollection.subscribeDocument(
+  'user-123',
+  (doc) => console.log('Document updated:', doc),
+  (error) => console.error('Subscription error:', error)
 );
 
-// Don't forget to unsubscribe
+// Unsubscribe
 unsubscribe();
-unsubscribeQuery();
 ```
 
-## Advanced Features
-
-### Multiple OrderBy Fields
-
-Sort by multiple fields with full type safety (requires composite index):
-
+#### Collection Subscription
 ```typescript
-// E-commerce: Best rated, then cheapest
-const products = await productsCollection.findDocumentsData(
-  [{ field: 'stock', operator: '>', value: 0 }],
-  {
-    orderBy: [
-      { field: 'rating', direction: 'desc' },
-      { field: 'price', direction: 'asc' }
-    ],
-    limit: 20
-  }
-);
-
-// Social media: Pinned first, then by date
-const posts = await postsCollection.findDocumentsData(
-  [],
-  {
-    orderBy: [
-      { field: 'isPinned', direction: 'desc' },
-      { field: 'createdAt', direction: 'desc' }
-    ]
-  }
+const unsubscribe = usersCollection.subscribeCollection(
+  (snapshot) => console.log('Collection changed:', snapshot.docs.length),
+  (error) => console.error('Subscription error:', error)
 );
 ```
 
-[**📚 See Multiple OrderBy in Query Guide →**](./docs/QUERIES.md#multiple-order-by-fields)
-
-### Custom Logger Support
-
-Integrate with any logging library (Winston, Pino, Bunyan) or use custom logger:
-
+#### Query Subscription
 ```typescript
-import { Logger } from 'ts-firestore-admin-helper';
+const unsubscribe = usersCollection.subscribeQuery(
+  [{ field: 'status', operator: '==', value: 'active' }],
+  (snapshot) => console.log('Active users:', snapshot.docs.length),
+  (error) => console.error('Subscription error:', error)
+);
+```
+
+### Advanced Features
+
+#### Custom Logger Integration
+```typescript
 import winston from 'winston';
 
-// Using Winston
-const winstonLogger = winston.createLogger({
+const logger = winston.createLogger({
   level: 'info',
   format: winston.format.json(),
-  transports: [
-    new winston.transports.File({ filename: 'error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'combined.log' })
-  ]
+  transports: [new winston.transports.Console()]
 });
 
-const usersWithWinston = new FirestoreHelper<User>(db, 'users', {
-  logger: winstonLogger,
-  debug: true  // Enable debug logs
-});
-
-// Using Pino
-import pino from 'pino';
-const pinoLogger = pino({ level: 'debug' });
-
-const usersWithPino = new FirestoreHelper<User>(db, 'users', {
-  logger: pinoLogger
-});
-
-// Custom logger implementation
-class MyLogger implements Logger {
-  debug(message: string, ...meta: unknown[]): void {
-    // Your custom debug logging
-  }
-  info(message: string, ...meta: unknown[]): void {
-    // Your custom info logging
-  }
-  warn(message: string, ...meta: unknown[]): void {
-    // Your custom warning logging
-  }
-  error(message: string, ...meta: unknown[]): void {
-    // Your custom error logging
-  }
-}
-
-const usersWithCustom = new FirestoreHelper<User>(db, 'users', {
-  logger: new MyLogger()
-});
-
-// Silent mode (disable all logging)
-const usersSilent = new FirestoreHelper<User>(db, 'users', {
-  logger: 'silent'
+const collection = new FirestoreHelper<User>(db, 'users', {
+  logger: logger,
+  debug: true
 });
 ```
 
-**Benefits:**
-- 📝 Log to files, cloud services (Datadog, CloudWatch), or custom destinations
-- 🔍 Debug mode for development, silent for production
-- 🎯 Structured logging with metadata
-- ⚡ Zero performance impact when silent
-
-[**📚 See Custom Logger Examples →**](./examples/custom-logger.ts)
-
-### Atomic Operations
-
+#### Undefined Value Handling
 ```typescript
-// Increment a counter
-await usersCollection.atomicIncrement('user-id', 'age', 1);
+// On add: undefined fields are automatically removed
+await collection.addDocument({
+  name: 'John',
+  email: 'john@example.com',
+  tempField: undefined  // This field is ignored
+});
 
-// Decrement
-await usersCollection.atomicIncrement('product-id', 'stock', -5);
-
-// Add to balance
-await usersCollection.atomicIncrement('wallet-id', 'balance', 100);
+// On update: undefined fields are deleted from Firestore
+await collection.editDocument('doc-id', {
+  name: 'Updated Name',
+  oldField: undefined  // This field is deleted
+});
 ```
 
-### Conditional Updates
-
+#### Query Validation
 ```typescript
-// Update only if status matches
-const result = await usersCollection.conditionalUpdate(
-  'order-id',
-  'status',
-  'pending', // Expected current value
-  { status: 'processing', processingStartedAt: Date.now() }
-);
-
-if (!result) {
-  console.log('Condition not met - status is not pending');
+// ❌ Will throw QueryValidationError
+try {
+  await collection.findDocumentsData([
+    { field: 'status', operator: '!=', value: 'active' },
+    { field: 'role', operator: '!=', value: 'admin' }  // Multiple != not allowed
+  ]);
+} catch (error) {
+  console.log(error.message); // "Cannot use multiple '!=' operators..."
 }
 ```
 
-## Documentation
+#### Custom Transactions
+```typescript
+const result = await db.runTransaction(async (transaction) => {
+  const docRef = usersCollection.doc('user-123');
+  const snapshot = await transaction.get(docRef);
 
-📚 **Complete Guides:**
+  // Use transaction with helper methods
+  const updated = await usersCollection.editDocument('user-456', {
+    status: 'processed'
+  }, transaction); // Pass transaction
 
-- [🔍 Query & OrderBy Patterns](./docs/QUERIES.md) - Queries, pagination, multiple orderBy, search patterns
-- [📦 Batch Operations](./docs/BATCH_OPERATIONS.md) - Bulk operations, imports, performance optimization
-- [⚡ Real-time Subscriptions](./docs/REALTIME.md) - Live data, chat apps, presence systems
-- [🔧 Undefined Value Handling](./docs/UNDEFINED_HANDLING.md) - Auto-cleanup undefined fields, delete fields on update
+  return { user: snapshot.data(), updated };
+});
+```
 
 ## Best Practices
 
-### 1. Define Clear Interfaces
+### Architecture & Design
 
+#### 1. Interface Design
 ```typescript
-// ✅ Good - Clear and type-safe
-interface Product {
+// ✅ Use consistent interfaces
+interface User {
+  id?: string;           // Optional for create
   name: string;
-  price: number;
-  stock: number;
-  category: string;
-  createdAt?: number;
-  updatedAt?: number;
+  email: string;
+  role: 'user' | 'admin';
+  status: 'active' | 'inactive';
+  createdAt?: number;    // Auto-managed
+  updatedAt?: number;    // Auto-managed
 }
 
-const products = new FirestoreHelper<Product>(db, 'products');
-```
-
-### 2. Use Batch Operations for Multiple Updates
-
-```typescript
-// ❌ Bad - Multiple individual calls
-for (const id of userIds) {
-  await usersCollection.removeDocument(id);
+// ❌ Avoid any types
+interface BadUser {
+  data: any;      // ❌ Too loose
+  metadata?: any; // ❌ Unpredictable
 }
-
-// ✅ Good - Single batch operation
-await usersCollection.batchRemove(userIds);
 ```
 
-### 3. Handle Errors Properly
-
+#### 2. Collection Organization
 ```typescript
-import { QueryValidationError } from 'ts-firestore-admin-helper';
+// ✅ Group related collections
+const users = new FirestoreHelper<User>(db, 'users');
+const posts = new FirestoreHelper<Post>(db, 'posts');
+const comments = new FirestoreHelper<Comment>(db, 'comments');
 
-try {
-  const result = await usersCollection.findDocumentsData([
-    { field: 'age', operator: '>', value: 18 },
-    { field: 'status', operator: '==', value: 'active' }
-  ]);
-  console.log('Found users:', result.length);
-} catch (error) {
-  if (error instanceof QueryValidationError) {
-    // Query violates Firestore constraints
-    console.error('Invalid query:', error.message);
-  } else if (error.message.includes('index is required')) {
-    // Create Firestore index
-    console.error('Missing index:', error.message);
-  } else {
-    // Other errors (network, permissions, etc.)
-    console.error('Query failed:', error);
+// ✅ Use subcollections for hierarchical data
+const userPosts = new FirestoreHelper<Post>(db, `users/${userId}/posts`);
+```
+
+### Query Optimization
+
+#### 1. Index Awareness
+```typescript
+// ✅ Queries that use indexes
+const activeUsers = await usersCollection.findDocumentsData([
+  { field: 'status', operator: '==', value: 'active' },
+  { field: 'createdAt', operator: '>', value: yesterday }
+]);
+
+// ❌ Queries requiring composite indexes
+const inefficient = await usersCollection.findDocumentsData([
+  { field: 'status', operator: '==', value: 'active' },
+  { field: 'age', operator: '>', value: 18 },
+  { field: 'city', operator: '==', value: 'Jakarta' } // Requires composite index
+]);
+```
+
+#### 2. Pagination Strategy
+```typescript
+// ✅ Efficient pagination
+async function getUsersPage(lastDocId?: string, limit = 20) {
+  return await usersCollection.findDocumentsData(
+    [{ field: 'status', operator: '==', value: 'active' }],
+    {
+      orderBy: 'createdAt',
+      orderDirection: 'desc',
+      limit,
+      startAfterId: lastDocId
+    }
+  );
+}
+```
+
+#### 3. Query Limits
+```typescript
+// ✅ Limit queries for performance
+const recentPosts = await postsCollection.findDocumentsData(
+  [{ field: 'published', operator: '==', value: true }],
+  {
+    orderBy: 'createdAt',
+    orderDirection: 'desc',
+    limit: 50  // Don't fetch all data
   }
-}
-```
-
-### 4. Automatic Query Validation
-
-The library automatically validates queries against Firestore constraints:
-
-```typescript
-import { QueryValidationError } from 'ts-firestore-admin-helper';
-
-// ❌ This will throw QueryValidationError BEFORE hitting Firestore
-try {
-  await usersCollection.findDocumentsData([
-    { field: 'status', operator: '!=', value: 'deleted' },
-    { field: 'role', operator: '!=', value: 'admin' } // Multiple != not allowed
-  ]);
-} catch (error) {
-  if (error instanceof QueryValidationError) {
-    console.error(error.message);
-    // "Cannot use multiple "!=" operators in the same query"
-  }
-}
-
-// ❌ This will throw QueryValidationError
-const tooManyIds = Array.from({ length: 15 }, (_, i) => `id-${i}`);
-try {
-  await usersCollection.findDocumentsData([
-    { field: 'id', operator: 'in', value: tooManyIds } // Max 10 values
-  ]);
-} catch (error) {
-  if (error instanceof QueryValidationError) {
-    console.error(error.message);
-    // "Operator "in" supports maximum 10 values, but 15 were provided"
-  }
-}
-```
-
-[**📚 See Query Validation Guide →**](./docs/QUERIES.md#automatic-query-validation)
-
-### 4. Clean Up Subscriptions
-
-```typescript
-useEffect(() => {
-  const unsubscribe = usersCollection.subscribeDocument('user-id', (doc) => {
-    setUser(doc.data);
-  });
-
-  return () => unsubscribe(); // Cleanup on unmount
-}, []);
-```
-
-### 6. Validate Before Batch Operations
-
-```typescript
-// ✅ Validate data before batch operations
-const validUsers = users.filter((user) => {
-  return user.email && user.name && user.age > 0;
-});
-
-await usersCollection.batchAdd(
-  validUsers.map((user) => ({ data: user }))
 );
 ```
 
-## API Reference
+### Batch Operations Best Practices
 
-### Core Methods
-
-| Method | Description |
-|--------|-------------|
-| `addDocument(data, id?, override?)` | Add a new document with optional custom ID |
-| `editDocument(docId, data)` | Update an existing document |
-| `removeDocument(docId)` | Delete a document |
-| `getDocument(docId)` | Get document snapshot |
-| `getDocumentData(docId)` | Get document data with ID |
-
-### Query Methods
-
-| Method | Description |
-|--------|-------------|
-| `findDocuments(query, options?)` | Find documents matching query |
-| `findDocumentsData(query, options?)` | Find documents returning data array |
-| `findDocument(query)` | Find single document snapshot |
-| `findDocumentData(query)` | Find single document data |
-| `buildQuery(filters)` | Build Firestore query |
-
-### Batch Methods
-
-| Method | Description |
-|--------|-------------|
-| `batchAdd(documents)` | Add multiple documents (max 500) |
-| `batchEdit(updates)` | Update multiple documents (max 500) |
-| `batchRemove(docIds)` | Delete multiple documents (max 500) |
-
-### Subscription Methods
-
-| Method | Description |
-|--------|-------------|
-| `subscribeDocument(docId, callback)` | Subscribe to document changes |
-| `subscribeCollection(callback)` | Subscribe to collection changes |
-| `subscribeQuery(query, callback)` | Subscribe to query results |
-
-### Advanced Methods
-
-| Method | Description |
-|--------|-------------|
-| `atomicIncrement(docId, field, value)` | Atomic increment/decrement |
-| `conditionalUpdate(docId, field, expectedValue, newData)` | Conditional update |
-| `doc(docId)` | Get document reference |
-| `validateConnection()` | Validate Firestore connection |
-
-## TypeScript Support
-
-This library is written in TypeScript and provides full type safety:
-
+#### 1. Batch Size Optimization
 ```typescript
-interface Todo {
-  title: string;
-  completed: boolean;
-  priority: 'low' | 'medium' | 'high';
-  createdAt?: number;
-  updatedAt?: number;
+// ✅ Use batchAddLarge for large data
+await usersCollection.batchAddLarge(userArray); // Auto-chunking
+
+// ✅ Manual chunking for control
+const chunks = [];
+for (let i = 0; i < data.length; i += 400) { // 400 < 500 for buffer
+  chunks.push(data.slice(i, i + 400));
 }
 
-const todos = new FirestoreHelper<Todo>(db, 'todos');
+for (const chunk of chunks) {
+  await collection.batchAdd(chunk);
+}
+```
 
-// ✅ Type-safe - TypeScript will validate
-await todos.addDocument({
-  title: 'Learn TypeScript',
-  completed: false,
-  priority: 'high',
-});
+#### 2. Error Handling
+```typescript
+// ✅ Handle batch errors gracefully
+try {
+  await usersCollection.batchAddLarge(userData);
+} catch (error) {
+  console.error('Batch operation failed:', error);
 
-// ❌ Type error - invalid priority value
-await todos.addDocument({
-  title: 'Invalid',
-  completed: false,
-  priority: 'urgent', // Type error!
+  // Fallback to individual operations
+  for (const user of userData) {
+    try {
+      await usersCollection.addDocument(user.data, user.id);
+    } catch (individualError) {
+      console.error(`Failed to add user ${user.id}:`, individualError);
+    }
+  }
+}
+```
+
+### Transaction Best Practices
+
+#### 1. Keep Transactions Small
+```typescript
+// ✅ Small, focused transactions
+await db.runTransaction(async (transaction) => {
+  const userRef = usersCollection.doc(userId);
+  const user = await transaction.get(userRef);
+
+  // Update user balance
+  transaction.update(userRef, {
+    balance: user.data().balance - amount,
+    updatedAt: Date.now()
+  });
 });
 ```
 
-## Error Handling
+#### 2. Avoid Long-Running Operations
+```typescript
+// ❌ Avoid external API calls in transactions
+await db.runTransaction(async (transaction) => {
+  // ... transaction logic ...
 
-The library provides clear error messages for common issues:
+  // ❌ Don't do this - can cause timeouts
+  const result = await externalApiCall();
 
-- **Document Not Found**: `Document with ID {id} does not exist`
-- **Duplicate ID**: `Document with ID {id} already exists`
-- **Missing Index**: `Firestore index is required for this query`
-- **Invalid Data**: `Document data must be a valid object`
-- **Batch Limit**: `Batch size exceeds Firestore limit`
+  // ... more transaction logic ...
+});
+```
 
-## Requirements
+#### 3. Handle Transaction Failures
+```typescript
+// ✅ Handle transaction conflicts
+let retries = 0;
+const maxRetries = 3;
 
-- Node.js >= 18
-- Firebase Admin SDK
-- TypeScript (recommended)
+while (retries < maxRetries) {
+  try {
+    await db.runTransaction(async (transaction) => {
+      // Transaction logic here
+    });
+    break; // Success
+  } catch (error) {
+    if (error.code === 'ABORTED') {
+      retries++;
+      continue; // Retry on conflict
+    }
+    throw error; // Re-throw other errors
+  }
+}
+```
 
-## Contributing
+### Real-time Subscriptions Best Practices
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+#### 1. Manage Subscription Lifecycle
+```typescript
+// ✅ Properly manage subscriptions
+class UserService {
+  private subscriptions: (() => void)[] = [];
 
-## License
+  subscribeToUser(userId: string) {
+    const unsubscribe = usersCollection.subscribeDocument(
+      userId,
+      this.handleUserUpdate.bind(this),
+      this.handleSubscriptionError.bind(this)
+    );
 
-MIT © [Rukanda Faridsi](https://github.com/rukandax)
+    this.subscriptions.push(unsubscribe);
+  }
 
-## Links
+  destroy() {
+    this.subscriptions.forEach(unsub => unsub());
+    this.subscriptions = [];
+  }
+}
+```
 
-- [📦 NPM Package](https://www.npmjs.com/package/ts-firestore-admin-helper)
-- [💻 GitHub Repository](https://github.com/rukandax/ts-firestore-admin-helper)
-- [🐛 Issue Tracker](https://github.com/rukandax/ts-firestore-admin-helper/issues)
-- [📚 Documentation](./docs/)
-  - [Advanced Transactions](./docs/TRANSACTIONS.md)
-  - [Query & OrderBy Patterns](./docs/QUERIES.md)
-  - [Batch Operations](./docs/BATCH_OPERATIONS.md)
-  - [Real-time Subscriptions](./docs/REALTIME.md)
-- [💡 Examples](./examples/)
-  - [Custom Logger](./examples/custom-logger.ts) - Winston, Pino, Bunyan integration
-  - [Query Validation](./examples/query-validation.ts) - Query patterns and validation
-  - [Undefined Handling](./examples/undefined-handling.ts) - Auto-cleanup undefined fields
+#### 2. Handle Connection Issues
+```typescript
+// ✅ Implement reconnection logic
+const subscribeWithRetry = (collection, query, callback, errorCallback) => {
+  let unsubscribe = null;
 
-## Support
+  const subscribe = () => {
+    unsubscribe = collection.subscribeQuery(query, callback, (error) => {
+      errorCallback(error);
 
-If you find this library helpful, please give it a ⭐️ on GitHub!
+      // Retry after delay
+      setTimeout(subscribe, 5000);
+    });
+  };
 
-For questions and support, please [open an issue](https://github.com/rukandax/ts-firestore-admin-helper/issues).
+  subscribe();
+
+  return () => unsubscribe?.();
+};
+```
+
+### Performance Optimization
+
+#### 1. Use Appropriate Data Types
+```typescript
+// ✅ Use efficient data types
+interface OptimizedUser {
+  id: string;
+  name: string;        // String is efficient
+  age: number;         // Numbers are efficient
+  tags: string[];      // Arrays are fine for small lists
+  metadata: { [key: string]: any }; // Objects for flexible data
+}
+
+// ❌ Avoid inefficient patterns
+interface InefficientUser {
+  largeText: string;   // Very long strings impact performance
+  nested: {            // Deep nesting can be slow
+    deeply: {
+      nested: {
+        data: string
+      }
+    }
+  };
+}
+```
+
+#### 2. Implement Caching Strategy
+```typescript
+// ✅ Cache frequently accessed data
+class CachedUserService {
+  private cache = new Map<string, { data: User; timestamp: number }>();
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+  async getUser(userId: string): Promise<User> {
+    const cached = this.cache.get(userId);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.data;
+    }
+
+    const user = await usersCollection.getDocumentData(userId);
+    this.cache.set(userId, { data: user, timestamp: Date.now() });
+    return user;
+  }
+}
+```
+
+### Security Best Practices
+
+#### 1. Validate Input Data
+```typescript
+// ✅ Validate data before operations
+const validateUserData = (data: Partial<User>) => {
+  if (!data.name || data.name.length < 2) {
+    throw new Error('Name must be at least 2 characters');
+  }
+
+  if (!data.email || !data.email.includes('@')) {
+    throw new Error('Invalid email format');
+  }
+
+  // Additional validations...
+};
+
+await usersCollection.addDocument(validateUserData(userInput));
+```
+
+#### 2. Use Security Rules
+```javascript
+// Firestore Security Rules example
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == resource.data.authorId;
+    }
+  }
+}
+```
+
+### Monitoring & Debugging
+
+#### 1. Enable Appropriate Logging
+```typescript
+// ✅ Use different log levels appropriately
+const collection = new FirestoreHelper<User>(db, 'users', {
+  logger: winstonLogger,
+  debug: process.env.NODE_ENV === 'development'
+});
+
+// Log important operations
+await usersCollection.addDocument(userData);
+logger.info(`User ${userData.email} created successfully`);
+```
+
+#### 2. Monitor Performance
+```typescript
+// ✅ Add performance monitoring
+const withTiming = async <T>(operation: () => Promise<T>, name: string): Promise<T> => {
+  const start = Date.now();
+  try {
+    const result = await operation();
+    const duration = Date.now() - start;
+    logger.info(`${name} completed in ${duration}ms`);
+    return result;
+  } catch (error) {
+    const duration = Date.now() - start;
+    logger.error(`${name} failed after ${duration}ms:`, error);
+    throw error;
+  }
+};
+
+await withTiming(
+  () => usersCollection.batchAddLarge(userData),
+  'Batch user creation'
+);
+```
+
+### Error Handling Best Practices
+
+#### 1. Implement Comprehensive Error Handling
+```typescript
+// ✅ Handle different error types
+try {
+  await usersCollection.addDocument(userData);
+} catch (error) {
+  if (error.code === 'PERMISSION_DENIED') {
+    logger.warn('Permission denied for user creation');
+    throw new ForbiddenError('Insufficient permissions');
+  }
+
+  if (error.code === 'ALREADY_EXISTS') {
+    logger.warn(`User with email ${userData.email} already exists`);
+    throw new ConflictError('User already exists');
+  }
+
+  if (error.code === 'RESOURCE_EXHAUSTED') {
+    logger.error('Firestore quota exceeded');
+    throw new QuotaExceededError('Service temporarily unavailable');
+  }
+
+  logger.error('Unexpected error during user creation:', error);
+  throw new InternalServerError('Failed to create user');
+}
+```
+
+#### 2. Implement Retry Logic
+```typescript
+// ✅ Implement exponential backoff retry
+const retryOperation = async <T>(
+  operation: () => Promise<T>,
+  maxRetries = 3,
+  baseDelay = 1000
+): Promise<T> => {
+  let lastError: Error;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      if (attempt === maxRetries) break;
+
+      // Exponential backoff with jitter
+      const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+};
+
+await retryOperation(() => usersCollection.getDocumentData(userId));
+```
+
+### Testing Best Practices
+
+#### 1. Unit Test Your Operations
+```typescript
+// ✅ Test with mocked Firestore
+import { mockFirestore } from 'firestore-jest-mock';
+
+describe('UserService', () => {
+  let db: FirebaseFirestore.Firestore;
+  let usersCollection: FirestoreHelper<User>;
+
+  beforeEach(() => {
+    db = mockFirestore();
+    usersCollection = new FirestoreHelper<User>(db, 'users');
+  });
+
+  it('should create user successfully', async () => {
+    const userData = { name: 'John', email: 'john@test.com' };
+    const result = await usersCollection.addDocument(userData);
+
+    expect(result.id).toBeDefined();
+    expect(result.data.name).toBe(userData.name);
+  });
+});
+```
+
+#### 2. Integration Testing
+```typescript
+// ✅ Test with real Firestore (use test project)
+describe('UserService Integration', () => {
+  let db: FirebaseFirestore.Firestore;
+
+  beforeAll(() => {
+    // Use test Firebase project
+    const testApp = admin.initializeApp({
+      projectId: 'test-project'
+    }, 'test');
+    db = testApp.firestore();
+  });
+
+  afterEach(async () => {
+    // Clean up test data
+    await clearTestData(db);
+  });
+
+  it('should handle concurrent updates', async () => {
+    // Test concurrent transaction scenarios
+  });
+});
+```
+
+### Deployment & Environment Best Practices
+
+#### 1. Environment Configuration
+```typescript
+// ✅ Use environment-specific configurations
+const getFirestoreConfig = () => {
+  const env = process.env.NODE_ENV || 'development';
+
+  switch (env) {
+    case 'production':
+      return {
+        logger: winstonLogger,
+        debug: false
+      };
+
+    case 'staging':
+      return {
+        logger: winstonLogger,
+        debug: true
+      };
+
+    default: // development
+      return {
+        logger: consoleLogger,
+        debug: true
+      };
+  }
+};
+
+const usersCollection = new FirestoreHelper<User>(
+  db,
+  'users',
+  getFirestoreConfig()
+);
+```
+
+#### 2. Connection Management
+```typescript
+// ✅ Properly initialize and cleanup connections
+class FirestoreService {
+  private db: FirebaseFirestore.Firestore;
+  private app: admin.app.App;
+
+  constructor() {
+    this.app = admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: `https://${projectId}.firebaseio.com`
+    });
+    this.db = this.app.firestore();
+
+    // Configure Firestore settings
+    this.db.settings({
+      ignoreUndefinedProperties: true,
+      timestampsInSnapshots: true
+    });
+  }
+
+  async destroy() {
+    await this.app.delete();
+  }
+}
+```
+
+This comprehensive guide covers the essential aspects of using the TypeScript Firestore Admin Helper effectively. Following these best practices will help you build robust, scalable, and maintainable applications with Firestore.
