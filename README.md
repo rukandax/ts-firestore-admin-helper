@@ -335,52 +335,10 @@ if (!result) {
 }
 ```
 
-### Custom Transactions
-
-For complex operations involving multiple collections or custom logic:
-
-```typescript
-const result = await usersCollection.runTransaction(async (transaction) => {
-  const senderRef = usersCollection.doc('sender-id');
-  const receiverRef = usersCollection.doc('receiver-id');
-
-  const senderDoc = await transaction.get(senderRef);
-  const receiverDoc = await transaction.get(receiverRef);
-
-  if (!senderDoc.exists || !receiverDoc.exists) {
-    throw new Error('User not found');
-  }
-
-  const senderData = senderDoc.data();
-  const receiverData = receiverDoc.data();
-
-  // Business logic validation
-  if (senderData.balance < amount) {
-    throw new Error('Insufficient balance');
-  }
-
-  // Atomic updates
-  transaction.update(senderRef, {
-    balance: senderData.balance - amount,
-    updatedAt: Date.now(),
-  });
-
-  transaction.update(receiverRef, {
-    balance: receiverData.balance + amount,
-    updatedAt: Date.now(),
-  });
-
-  return { success: true, amount };
-});
-```
-
-[**📚 See Advanced Examples →**](./examples/advanced-examples.ts)
-
 ## Documentation
 
 📚 **Complete Guides:**
 
-- [📘 Advanced Transactions](./docs/TRANSACTIONS.md) - Wallet transfers, inventory management, seat reservations
 - [🔍 Query & OrderBy Patterns](./docs/QUERIES.md) - Queries, pagination, multiple orderBy, search patterns
 - [📦 Batch Operations](./docs/BATCH_OPERATIONS.md) - Bulk operations, imports, performance optimization
 - [⚡ Real-time Subscriptions](./docs/REALTIME.md) - Live data, chat apps, presence systems
@@ -477,23 +435,7 @@ try {
 
 [**📚 See Query Validation Guide →**](./docs/QUERIES.md#automatic-query-validation)
 
-### 5. Use Pagination for Large Datasets
-    // Handle other errors
-  }
-}
-```
-
-### 4. Use Transactions for Critical Operations
-
-```typescript
-// ✅ For operations that must succeed or fail together
-await usersCollection.runTransaction(async (transaction) => {
-  // Multiple related operations
-  // Either all succeed or all fail
-});
-```
-
-### 5. Clean Up Subscriptions
+### 4. Clean Up Subscriptions
 
 ```typescript
 useEffect(() => {
@@ -560,10 +502,9 @@ await usersCollection.batchAdd(
 
 | Method | Description |
 |--------|-------------|
-| `runTransaction(callback)` | Execute custom transaction |
 | `atomicIncrement(docId, field, value)` | Atomic increment/decrement |
 | `conditionalUpdate(docId, field, expectedValue, newData)` | Conditional update |
-| `doc(docId)` | Get document reference for transactions |
+| `doc(docId)` | Get document reference |
 | `validateConnection()` | Validate Firestore connection |
 
 ## TypeScript Support
@@ -631,7 +572,9 @@ MIT © [Rukanda Faridsi](https://github.com/rukandax)
   - [Batch Operations](./docs/BATCH_OPERATIONS.md)
   - [Real-time Subscriptions](./docs/REALTIME.md)
 - [💡 Examples](./examples/)
-  - [Advanced Examples](./examples/advanced-examples.ts) - Transactions, queries, multiple orderBy
+  - [Custom Logger](./examples/custom-logger.ts) - Winston, Pino, Bunyan integration
+  - [Query Validation](./examples/query-validation.ts) - Query patterns and validation
+  - [Undefined Handling](./examples/undefined-handling.ts) - Auto-cleanup undefined fields
 
 ## Support
 

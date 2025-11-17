@@ -504,45 +504,7 @@ const validated = untrustedData.filter(item => {
 await usersCollection.batchAdd(validated);
 ```
 
-### 3. Handle Partial Failures
-
-```typescript
-async function batchAddWithRetry<T extends { createdAt?: number; updatedAt?: number }>(
-  collection: FirestoreHelper<T>,
-  items: Array<{ id?: string; data: T }>,
-  maxRetries: number = 3
-) {
-  const chunkSize = 500;
-
-  for (let i = 0; i < items.length; i += chunkSize) {
-    const chunk = items.slice(i, i + chunkSize);
-    let attempts = 0;
-    let success = false;
-
-    while (attempts < maxRetries && !success) {
-      try {
-        await collection.batchAdd(chunk);
-        success = true;
-        console.log(`Chunk ${i / chunkSize + 1} succeeded`);
-      } catch (error) {
-        attempts++;
-        console.error(`Chunk ${i / chunkSize + 1} attempt ${attempts} failed:`, error);
-        
-        if (attempts < maxRetries) {
-          // Exponential backoff
-          await new Promise(resolve => 
-            setTimeout(resolve, Math.pow(2, attempts) * 1000)
-          );
-        } else {
-          throw new Error(`Chunk ${i / chunkSize + 1} failed after ${maxRetries} attempts`);
-        }
-      }
-    }
-  }
-}
-```
-
-### 4. Log Progress for Large Operations
+### 3. Log Progress for Large Operations
 
 ```typescript
 async function batchOperationWithProgress<T extends { createdAt?: number; updatedAt?: number }>(

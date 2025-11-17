@@ -7,18 +7,12 @@ Complete documentation for the TypeScript Firestore Admin Helper library.
 ### Getting Started
 
 - [Main README](../README.md) - Quick start, installation, and basic usage
-- [Examples](../examples/advanced-examples.ts) - Comprehensive code examples
+- [Examples](../examples/) - Code examples and patterns
 
 ### Guides
 
-1. **[Advanced Transactions](./TRANSACTIONS.md)**
-   - Wallet balance transfers
-   - E-commerce inventory management
-   - Seat reservation systems
-   - Document counters with rollback
-   - Transaction best practices
-
-2. **[Query & OrderBy Patterns](./QUERIES.md)**
+1. **[Query & OrderBy Patterns](./QUERIES.md)**2. **[Query & OrderBy Patterns](./QUERIES.md)**
+1. **[Query & OrderBy Patterns](./QUERIES.md)**
    - Basic and complex queries
    - Multiple orderBy fields (single & multi-field sorting)
    - Pagination strategies
@@ -27,34 +21,32 @@ Complete documentation for the TypeScript Firestore Admin Helper library.
    - Common search patterns
    - Firestore limitations and workarounds
 
-3. **[Batch Operations](./BATCH_OPERATIONS.md)**
+2. **[Batch Operations](./BATCH_OPERATIONS.md)**
    - Batch add, update, and delete
    - Bulk imports from CSV/JSON
    - Performance optimization
    - Error handling
    - Progress tracking
 
-4. **[Real-time Subscriptions](./REALTIME.md)**
-   - Live document updates
-   - Query subscriptions
-   - Chat applications
-   - Real-time dashboards
-   - Presence systems
-
-5. **[Custom Logger](./CUSTOM_LOGGER.md)**
-   - Winston integration
-   - Pino integration
-   - Custom logger implementations
-   - Debug mode
-   - Production logging strategies
-   - Queue-based processing
-
-4. **[Real-time Subscriptions](./REALTIME.md)**
+3. **[Real-time Subscriptions](./REALTIME.md)**
    - Document subscriptions
    - Collection subscriptions
    - Query subscriptions
    - Subscription management
    - Use cases (chat, presence, notifications)
+
+4. **[Custom Logger](./CUSTOM_LOGGER.md)**
+   - Winston integration
+   - Pino integration
+   - Custom logger implementations
+   - Debug mode
+   - Production logging strategies
+
+5. **[Undefined Value Handling](./UNDEFINED_HANDLING.md)**
+   - Auto-cleanup undefined fields on add
+   - Auto-delete fields with undefined values on update
+   - Batch operations support
+   - Use cases and examples
    - Best practices for real-time data
 
 ## 🎯 Quick Navigation

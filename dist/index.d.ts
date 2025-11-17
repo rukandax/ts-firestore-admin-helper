@@ -186,64 +186,6 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     subscribeCollection(callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void, errorCallback?: (error: Error) => void): () => void;
     subscribeQuery(query: QueryPayload<T>[], callback: (snapshot: admin.firestore.QuerySnapshot<T>) => void, errorCallback?: (error: Error) => void): () => void;
     /**
-     * Executes a custom transaction with full control
-     * Perfect for complex operations like balance updates, inventory management, etc.
-     *
-     * @param callback - Transaction callback with transaction context
-     * @returns Result from the transaction callback
-     *
-     * @example
-     * // Transfer balance between users
-     * await collection.runTransaction(async (transaction) => {
-     *   const senderRef = collection.doc('user1');
-     *   const receiverRef = collection.doc('user2');
-     *
-     *   const senderDoc = await transaction.get(senderRef);
-     *   const receiverDoc = await transaction.get(receiverRef);
-     *
-     *   if (!senderDoc.exists || !receiverDoc.exists) {
-     *     throw new Error('User not found');
-     *   }
-     *
-     *   const senderData = senderDoc.data();
-     *   const receiverData = receiverDoc.data();
-     *
-     *   if (senderData.balance < amount) {
-     *     throw new Error('Insufficient balance');
-     *   }
-     *
-     *   transaction.update(senderRef, {
-     *     balance: senderData.balance - amount,
-     *     updatedAt: Date.now()
-     *   });
-     *
-     *   transaction.update(receiverRef, {
-     *     balance: receiverData.balance + amount,
-     *     updatedAt: Date.now()
-     *   });
-     *
-     *   return { success: true, amount };
-     * });
-     */
-    runTransaction<R>(callback: (transaction: admin.firestore.Transaction) => Promise<R>): Promise<R>;
-    /**
-     * Executes a transaction with automatic retry on transient failures
-     * Useful for handling transaction contention in high-concurrency scenarios
-     *
-     * @param callback - Transaction callback with transaction context
-     * @param maxRetries - Maximum number of retry attempts (default: 0, no retry)
-     * @returns Result from the transaction callback
-     *
-     * @example
-     * // Transfer with retry logic (retry up to 3 times)
-     * await collection.runTransactionWithRetry(async (transaction) => {
-     *   const senderRef = collection.doc('user1');
-     *   const senderDoc = await transaction.get(senderRef);
-     *   // ... transaction logic
-     * }, 3);
-     */
-    runTransactionWithRetry<R>(callback: (transaction: admin.firestore.Transaction) => Promise<R>, maxRetries?: number): Promise<R>;
-    /**
      * Helper method to get document reference for use in custom transactions
      * @param docId - Document ID
      * @returns Document reference
