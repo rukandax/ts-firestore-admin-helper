@@ -804,7 +804,458 @@ Subscribes to real-time updates for query results.
 
 ---
 
+#### `runTransaction<R>(callback): Promise<R>`
+
+Executes a custom transaction with full control over transaction logic.
+
+**Parameters:**
+- `callback: (transaction: Transaction) => Promise<R>` - Transaction callback function
+
+**Returns:** Result from the transaction callback
+
+**Use Cases:**
+- Balance transfers between accounts
+- Inventory reservation systems
+- Multi-document atomic updates
+- Complex business logic requiring consistency
+
+**Features:**
+- Full Firestore transaction API access
+- Automatic retry on conflicts
+- Read-modify-write consistency
+- Isolation from concurrent operations
+
+**Example:**
+```typescript
+const result = await collection.runTransaction(async (transaction) => {
+  const doc1Ref = collection.doc('doc1');
+  const doc2Ref = collection.doc('doc2');
+  
+  const doc1 = await transaction.get(doc1Ref);
+  const doc2 = await transaction.get(doc2Ref);
+  
+  // Business logic...
+  
+  transaction.update(doc1Ref, { /* ... */ });
+  transaction.update(doc2Ref, { /* ... */ });
+  
+  return { success: true };
+});
+```
+
+---
+
+#### `doc(docId): DocumentReference<T>`
+
+Gets a document reference for use in custom transactions.
+
+**Parameters:**
+- `docId: string` - Document ID
+
+**Returns:** Firestore DocumentReference
+
+**Example:**
+```typescript
+const docRef = collection.doc('my-doc-id');
+// Use in transaction.get(), transaction.update(), etc.
+```
+
+---
+
+#### `atomicIncrement(docId, field, value): Promise<{id: string; data: T}>`
+
+Performs atomic increment/decrement on a numeric field.
+
+**Parameters:**
+- `docId: string` - Document ID
+- `field: keyof T` - Field name (must be a number)
+- `value: number` - Amount to add (positive) or subtract (negative)
+
+**Returns:** Updated document with new value
+
+**Use Cases:**
+- View counters
+- Stock/inventory updates
+- Balance additions/deductions
+- Like/vote counters
+- Quota tracking
+
+**Features:**
+- Thread-safe (no race conditions)
+- Validates field is numeric
+- Automatic `updatedAt` timestamp
+- Returns updated data
+
+**Examples:**
+```typescript
+// Increment counter
+await collection.atomicIncrement('post-1', 'views', 1);
+
+// Decrement stock
+await collection.atomicIncrement('product-1', 'stock', -5);
+
+// Add to balance
+const result = await collection.atomicIncrement('wallet-1', 'balance', 100);
+console.log('New balance:', result.data.balance);
+```
+
+---
+
+#### `conditionalUpdate(docId, field, expectedValue, newData): Promise<{id: string; data: T} | null>`
+
+Updates document only if a field matches expected value (optimistic locking).
+
+**Parameters:**
+- `docId: string` - Document ID
+- `field: keyof T` - Field to check
+- `expectedValue: T[keyof T]` - Expected current value
+- `newData: Partial<T>` - Data to update if condition matches
+
+**Returns:** Updated document or `null` if condition not met
+
+**Use Cases:**
+- Prevent double-processing
+- State machine transitions
+- Optimistic locking
+- Version control
+- Workflow management
+
+**Features:**
+- Atomic check-and-update
+- No race conditions
+- Returns null if condition fails
+- Automatic `updatedAt` timestamp
+
+**Examples:**
+```typescript
+// Update only if status is 'pending'
+const result = await collection.conditionalUpdate(
+  'order-1',
+  'status',
+  'pending',
+  { status: 'processing' }
+);
+
+if (result) {
+  console.log('Order updated');
+} else {
+  console.log('Order already processed');
+}
+
+// Version-based updates
+const doc = await collection.getDocumentData('doc-1');
+const updated = await collection.conditionalUpdate(
+  'doc-1',
+  'version',
+  doc.data.version,
+  { content: 'new content', version: doc.data.version + 1 }
+);
+
+if (!updated) {
+  throw new Error('Document was modified by another user');
+}
+```
+
+---
+
 ## 🎯 Advanced Features
+
+### Custom Transactions
+
+For complex operations that require full control over transaction logic, use the custom transaction methods:
+
+#### runTransaction - Full Transaction Control
+
+Perfect for complex business logic like balance transfers, inventory management, or multi-document updates:
+
+```typescript
+interface Wallet {
+  userId: string;
+  balance: number;
+  currency: string;
+}
+
+const walletsCollection = new FirestoreHelper<Wallet>(db, 'wallets');
+
+// Transfer money between wallets with lock mechanism
+const result = await walletsCollection.runTransaction(async (transaction) => {
+  const senderRef = walletsCollection.doc('wallet-sender');
+  const receiverRef = walletsCollection.doc('wallet-receiver');
+
+  // Read both documents
+  const senderDoc = await transaction.get(senderRef);
+  const receiverDoc = await transaction.get(receiverRef);
+
+  if (!senderDoc.exists || !receiverDoc.exists) {
+    throw new Error('Wallet not found');
+  }
+
+  const senderData = senderDoc.data();
+  const receiverData = receiverDoc.data();
+
+  if (!senderData || !receiverData) {
+    throw new Error('Invalid wallet data');
+  }
+
+  const transferAmount = 100;
+
+  // Validate business logic
+  if (senderData.balance < transferAmount) {
+    throw new Error('Insufficient balance');
+  }
+
+  if (senderData.currency !== receiverData.currency) {
+    throw new Error('Currency mismatch');
+  }
+
+  // Perform atomic updates
+  transaction.update(senderRef, {
+    balance: senderData.balance - transferAmount,
+    updatedAt: Date.now()
+  });
+
+  transaction.update(receiverRef, {
+    balance: receiverData.balance + transferAmount,
+    updatedAt: Date.now()
+  });
+
+  return {
+    success: true,
+    amount: transferAmount,
+    newSenderBalance: senderData.balance - transferAmount,
+    newReceiverBalance: receiverData.balance + transferAmount
+  };
+});
+
+console.log('Transfer result:', result);
+```
+
+#### atomicIncrement - Safe Counter/Balance Updates
+
+Safely increment or decrement numeric fields without race conditions:
+
+```typescript
+// Increment product view count
+await productsCollection.atomicIncrement('product-123', 'viewCount', 1);
+
+// Decrement inventory stock (purchase)
+await productsCollection.atomicIncrement('product-456', 'stock', -5);
+
+// Add funds to user balance
+const updated = await walletsCollection.atomicIncrement('wallet-789', 'balance', 100);
+console.log('New balance:', updated.data.balance);
+
+// Deduct from balance (payment)
+try {
+  await walletsCollection.atomicIncrement('wallet-789', 'balance', -50);
+} catch (error) {
+  console.error('Payment failed:', error);
+}
+```
+
+#### conditionalUpdate - Optimistic Locking
+
+Update documents only if they're in an expected state:
+
+```typescript
+interface Order {
+  orderId: string;
+  status: 'pending' | 'processing' | 'completed' | 'cancelled';
+  amount: number;
+  processedAt?: number;
+}
+
+const ordersCollection = new FirestoreHelper<Order>(db, 'orders');
+
+// Update order only if it's still pending
+const result = await ordersCollection.conditionalUpdate(
+  'order-123',
+  'status',
+  'pending',
+  {
+    status: 'processing',
+    processedAt: Date.now()
+  }
+);
+
+if (result) {
+  console.log('Order processing started');
+} else {
+  console.log('Order is no longer pending - already processed by another worker');
+}
+
+// Prevent double-processing with state checks
+const processOrder = async (orderId: string) => {
+  const result = await ordersCollection.conditionalUpdate(
+    orderId,
+    'status',
+    'pending',
+    {
+      status: 'processing',
+      processedAt: Date.now()
+    }
+  );
+
+  if (!result) {
+    throw new Error('Order cannot be processed - invalid state');
+  }
+
+  // Process order...
+  
+  // Mark as completed
+  await ordersCollection.editDocument(orderId, {
+    status: 'completed'
+  });
+};
+```
+
+#### Real-world Use Cases
+
+**1. E-commerce Inventory Management:**
+```typescript
+// Reserve inventory atomically
+await productsCollection.runTransaction(async (transaction) => {
+  const productRef = productsCollection.doc('product-123');
+  const productDoc = await transaction.get(productRef);
+  
+  if (!productDoc.exists) {
+    throw new Error('Product not found');
+  }
+
+  const product = productDoc.data();
+  const requestedQty = 5;
+
+  if (!product || product.stock < requestedQty) {
+    throw new Error('Insufficient stock');
+  }
+
+  transaction.update(productRef, {
+    stock: product.stock - requestedQty,
+    reservedStock: (product.reservedStock || 0) + requestedQty,
+    updatedAt: Date.now()
+  });
+
+  return { reserved: requestedQty };
+});
+```
+
+**2. Booking System with Capacity:**
+```typescript
+interface Event {
+  name: string;
+  capacity: number;
+  bookedSeats: number;
+  availableSeats: number;
+}
+
+const eventsCollection = new FirestoreHelper<Event>(db, 'events');
+
+// Book seats with concurrency safety
+const bookSeats = async (eventId: string, seatsRequested: number) => {
+  return await eventsCollection.runTransaction(async (transaction) => {
+    const eventRef = eventsCollection.doc(eventId);
+    const eventDoc = await transaction.get(eventRef);
+
+    if (!eventDoc.exists) {
+      throw new Error('Event not found');
+    }
+
+    const event = eventDoc.data();
+
+    if (!event || event.availableSeats < seatsRequested) {
+      throw new Error('Not enough seats available');
+    }
+
+    transaction.update(eventRef, {
+      bookedSeats: event.bookedSeats + seatsRequested,
+      availableSeats: event.availableSeats - seatsRequested,
+      updatedAt: Date.now()
+    });
+
+    return {
+      success: true,
+      bookedSeats: seatsRequested,
+      remainingSeats: event.availableSeats - seatsRequested
+    };
+  });
+};
+```
+
+**3. Multi-User Collaborative Editing:**
+```typescript
+// Prevent concurrent edits with version checking
+interface Document {
+  content: string;
+  version: number;
+  lastEditedBy: string;
+}
+
+const docsCollection = new FirestoreHelper<Document>(db, 'documents');
+
+const updateDocument = async (docId: string, newContent: string, expectedVersion: number, userId: string) => {
+  const result = await docsCollection.conditionalUpdate(
+    docId,
+    'version',
+    expectedVersion,
+    {
+      content: newContent,
+      version: expectedVersion + 1,
+      lastEditedBy: userId
+    }
+  );
+
+  if (!result) {
+    throw new Error('Document was modified by another user. Please refresh and try again.');
+  }
+
+  return result;
+};
+```
+
+**4. Loyalty Points System:**
+```typescript
+interface UserPoints {
+  userId: string;
+  points: number;
+  tier: 'bronze' | 'silver' | 'gold' | 'platinum';
+}
+
+const pointsCollection = new FirestoreHelper<UserPoints>(db, 'userPoints');
+
+// Award points and auto-upgrade tier
+const awardPoints = async (userId: string, pointsToAdd: number) => {
+  return await pointsCollection.runTransaction(async (transaction) => {
+    const userRef = pointsCollection.doc(userId);
+    const userDoc = await transaction.get(userRef);
+
+    if (!userDoc.exists) {
+      throw new Error('User not found');
+    }
+
+    const userData = userDoc.data();
+    if (!userData) {
+      throw new Error('Invalid user data');
+    }
+
+    const newPoints = userData.points + pointsToAdd;
+    let newTier = userData.tier;
+
+    // Auto-upgrade tier based on points
+    if (newPoints >= 10000) newTier = 'platinum';
+    else if (newPoints >= 5000) newTier = 'gold';
+    else if (newPoints >= 1000) newTier = 'silver';
+    else newTier = 'bronze';
+
+    transaction.update(userRef, {
+      points: newPoints,
+      tier: newTier,
+      updatedAt: Date.now()
+    });
+
+    return { newPoints, newTier, upgraded: newTier !== userData.tier };
+  });
+};
+```
 
 ### Custom ID Generation
 

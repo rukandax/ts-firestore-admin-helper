@@ -626,6 +626,201 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
     return unsubscribe;
   }
 
+  /**
+   * Executes a custom transaction with full control
+   * Perfect for complex operations like balance updates, inventory management, etc.
+   *
+   * @param callback - Transaction callback with transaction context
+   * @returns Result from the transaction callback
+   *
+   * @example
+   * // Transfer balance between users
+   * await collection.runTransaction(async (transaction) => {
+   *   const senderRef = collection.doc('user1');
+   *   const receiverRef = collection.doc('user2');
+   *
+   *   const senderDoc = await transaction.get(senderRef);
+   *   const receiverDoc = await transaction.get(receiverRef);
+   *
+   *   if (!senderDoc.exists || !receiverDoc.exists) {
+   *     throw new Error('User not found');
+   *   }
+   *
+   *   const senderData = senderDoc.data();
+   *   const receiverData = receiverDoc.data();
+   *
+   *   if (senderData.balance < amount) {
+   *     throw new Error('Insufficient balance');
+   *   }
+   *
+   *   transaction.update(senderRef, {
+   *     balance: senderData.balance - amount,
+   *     updatedAt: Date.now()
+   *   });
+   *
+   *   transaction.update(receiverRef, {
+   *     balance: receiverData.balance + amount,
+   *     updatedAt: Date.now()
+   *   });
+   *
+   *   return { success: true, amount };
+   * });
+   */
+  async runTransaction<R>(
+    callback: (transaction: admin.firestore.Transaction) => Promise<R>
+  ): Promise<R> {
+    return this.firestoreInstance.runTransaction(callback);
+  }
+
+  /**
+   * Helper method to get document reference for use in custom transactions
+   * @param docId - Document ID
+   * @returns Document reference
+   */
+  doc(docId: string): admin.firestore.DocumentReference<T> {
+    return this.collection.doc(docId);
+  }
+
+  /**
+   * Performs an atomic increment/decrement operation on a numeric field
+   * Useful for counters, balances, inventory counts, etc.
+   *
+   * @param docId - Document ID
+   * @param field - Field name to increment/decrement
+   * @param value - Amount to increment (positive) or decrement (negative)
+   * @returns Updated document data
+   *
+   * @example
+   * // Increment view count
+   * await collection.atomicIncrement('post-123', 'viewCount', 1);
+   *
+   * // Decrement stock
+   * await collection.atomicIncrement('product-456', 'stock', -5);
+   *
+   * // Add to balance
+   * await collection.atomicIncrement('user-789', 'balance', 100);
+   */
+  async atomicIncrement(
+    docId: string,
+    field: keyof T,
+    value: number
+  ): Promise<{id: string; data: T}> {
+    const docRef = this.collection.doc(docId);
+
+    return this.firestoreInstance.runTransaction(async transaction => {
+      const docSnapshot = await transaction.get(docRef);
+
+      if (!docSnapshot.exists) {
+        throw new Error(`Document with ID ${docId} does not exist`);
+      }
+
+      const currentData = docSnapshot.data();
+      if (!currentData) {
+        throw new Error(`Document with ID ${docId} has no data`);
+      }
+
+      // Validate field is a number
+      const currentValue = currentData[field];
+      if (typeof currentValue !== 'number') {
+        throw new Error(
+          `Field '${String(field)}' is not a number. Current type: ${typeof currentValue}`
+        );
+      }
+
+      const newValue = currentValue + value;
+
+      const updateData: Partial<T> = {
+        [field]: newValue,
+        updatedAt: this.getUnixTimestamp(),
+      } as Partial<T>;
+
+      transaction.update(docRef, updateData as admin.firestore.UpdateData<T>);
+
+      const updatedData: T = {
+        ...currentData,
+        ...updateData,
+      } as T;
+
+      return {id: docId, data: updatedData};
+    });
+  }
+
+  /**
+   * Conditionally updates a document based on current field value
+   * Useful for implementing optimistic locking or state-based updates
+   *
+   * @param docId - Document ID
+   * @param field - Field to check
+   * @param expectedValue - Expected current value
+   * @param newData - Data to update if condition matches
+   * @returns Updated document data or null if condition not met
+   *
+   * @example
+   * // Update only if status is 'pending'
+   * const result = await collection.conditionalUpdate(
+   *   'order-123',
+   *   'status',
+   *   'pending',
+   *   { status: 'processing', processingStartedAt: Date.now() }
+   * );
+   *
+   * if (!result) {
+   *   console.log('Order is no longer pending');
+   * }
+   */
+  async conditionalUpdate(
+    docId: string,
+    field: keyof T,
+    expectedValue: T[keyof T],
+    newData: Partial<T>
+  ): Promise<{id: string; data: T} | null> {
+    const docRef = this.collection.doc(docId);
+
+    return this.firestoreInstance.runTransaction(async transaction => {
+      const docSnapshot = await transaction.get(docRef);
+
+      if (!docSnapshot.exists) {
+        throw new Error(`Document with ID ${docId} does not exist`);
+      }
+
+      const currentData = docSnapshot.data();
+      if (!currentData) {
+        throw new Error(`Document with ID ${docId} has no data`);
+      }
+
+      // Check condition
+      if (currentData[field] !== expectedValue) {
+        return null; // Condition not met
+      }
+
+      // Validate update data
+      this.validateDocumentData(newData);
+      this.validateTimestampFields(newData);
+
+      // Prevent updating the document ID
+      if ('id' in newData) {
+        throw new Error('Cannot update the document ID');
+      }
+
+      const timestampedData: Partial<T> = {
+        ...newData,
+        updatedAt: this.getUnixTimestamp(),
+      };
+
+      transaction.update(
+        docRef,
+        timestampedData as admin.firestore.UpdateData<T>
+      );
+
+      const updatedData: T = {
+        ...currentData,
+        ...timestampedData,
+      } as T;
+
+      return {id: docId, data: updatedData};
+    });
+  }
+
   private isFirestoreError(error: unknown): error is admin.FirebaseError {
     return (
       typeof error === 'object' &&

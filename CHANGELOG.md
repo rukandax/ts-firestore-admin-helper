@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### ✨ New Features - Custom Transaction Support
+
+- **`runTransaction<R>(callback)`**: Execute custom transactions with full control
+  - Perfect for balance transfers, inventory management, and complex business logic
+  - Full Firestore transaction API access with automatic retry on conflicts
+  - Type-safe callback with generic return type support
+  
+- **`doc(docId)`**: Get document reference for use in custom transactions
+  - Helper method to simplify transaction code
+  - Returns properly typed DocumentReference<T>
+
+- **`atomicIncrement(docId, field, value)`**: Atomic increment/decrement operations
+  - Thread-safe counter updates (views, likes, votes)
+  - Safe balance additions/deductions
+  - Stock/inventory updates without race conditions
+  - Validates field is numeric before operation
+  
+- **`conditionalUpdate(docId, field, expectedValue, newData)`**: Optimistic locking updates
+  - Update only if field matches expected value
+  - Prevent double-processing in workflows
+  - State machine transitions
+  - Version-based conflict detection
+  - Returns null if condition not met
+
+### 📝 Documentation
+
+- Added comprehensive transaction examples in README
+- Added 4+ real-world use cases:
+  - E-commerce inventory management
+  - Booking system with capacity limits
+  - Multi-user collaborative editing
+  - Loyalty points system with tier upgrades
+- Added detailed API documentation for new methods
+
+## [1.3.0] - 2025-11-17
+
 ### 🔒 Security Fixes
 
 - **CRITICAL**: Replaced `Math.random()` with cryptographically secure `crypto.randomBytes()` for ID generation
