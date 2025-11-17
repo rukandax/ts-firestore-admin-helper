@@ -1,756 +1,1509 @@
-# 🔥 ts-firestore-admin-helper
+# 🔥 ts-firestore-admin-helper# 🔥 Firebase Admin Firestore Helper
 
-> A type-safe, secure, and production-ready Firebase Firestore helper library for Node.js applications.
 
-[![npm version](https://badge.fury.io/js/ts-firestore-admin-helper.svg)](https://www.npmjs.com/package/ts-firestore-admin-helper)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.4%2B-blue)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org/)
 
----
+[![npm version](https://img.shields.io/npm/v/ts-firestore-admin-helper.svg)](https://www.npmjs.com/package/ts-firestore-admin-helper)[![npm version](https://img.shields.io/npm/v/ts-firestore-admin-helper.svg)](https://www.npmjs.com/package/ts-firestore-admin-helper)
 
-## 📖 Table of Contents
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-- [Features](#-features)
-- [Installation](#-installation)
-- [Quick Start](#-quick-start)
-- [Setup Guide](#-setup-guide)
-- [Usage Examples](#-usage-examples)
-- [API Reference](#-api-reference)
-- [Advanced Features](#-advanced-features)
-- [Best Practices](#-best-practices)
-- [Important Notes](#-important-notes)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4.5-blue)](https://www.typescriptlang.org/)[![TypeScript](https://img.shields.io/badge/TypeScript-5.4.5-blue)](https://www.typescriptlang.org/)
+
+
+
+Type-safe Firebase Firestore helper for Node.js. CRUD operations, batch processing, real-time subscriptions, and transaction support made simple.Type-safe Firebase Firestore helper with CRUD operations, batch processing, real-time subscriptions, and transaction support. Simple to use, production-ready.
+
+
+
+------
+
+
+
+## 📋 Table of Contents## � Table of Contents
+
+
+
+- [Installation](#-installation)- [Installation](#-installation)
+
+- [Quick Start](#-quick-start)- [Quick Start](#-quick-start)
+
+- [Basic Usage](#-basic-usage)- [Basic Usage](#-basic-usage)
+
+- [API Reference](#-api-reference)  - [CRUD Operations](#crud-operations)
+
+- [Advanced Examples](#-advanced-examples)  - [Batch Operations](#batch-operations)
+
+- [Best Practices](#-best-practices)  - [Queries](#queries)
+
+- [Troubleshooting](#-troubleshooting)  - [Real-time Subscriptions](#real-time-subscriptions)
+
+  - [Transactions](#transactions)
+
+---- [API Reference](#-api-reference)
+
+- [Advanced Examples](#-advanced-examples)
+
+## 📦 Installation- [Best Practices](#-best-practices)
+
 - [Troubleshooting](#-troubleshooting)
-- [Requirements](#-requirements)
-- [Contributing](#-contributing)
-- [License](#-license)
+
+```bash
+
+npm install ts-firestore-admin-helper firebase-admin---
+
+```
 
 ---
 
-## ✨ Features
+**Requirements:**
 
-### 🔒 Security First
+- Node.js >= 18.0.0## ✨ Features
+
+- firebase-admin >= 12.2.0
+
+- TypeScript >= 5.4.5 (for TypeScript projects)### 🔒 Security First
+
 - ✅ **Cryptographically secure ID generation** using Node.js `crypto` module
-- ✅ **Comprehensive input validation** for all operations
+
+---- ✅ **Comprehensive input validation** for all operations
+
 - ✅ **Custom ID format validation** to prevent invalid Firestore IDs
-- ✅ **No SQL injection risks** - all queries are type-safe
+
+## ⚡ Quick Start- ✅ **No SQL injection risks** - all queries are type-safe
+
 - ✅ **Zero `any` types** - complete TypeScript type safety
 
-### 🚀 Performance & Reliability
-- ✅ **Automatic batch size validation** (Firestore 500-document limit)
-- ✅ **Race condition prevention** in batch operations
-- ✅ **Transaction consistency** - all critical operations use Firestore transactions
-- ✅ **Memory leak prevention** in real-time subscriptions
-- ✅ **Optimized query execution** with proper indexing hints
+### 1. Initialize Firebase Admin
 
-### 📝 Developer Experience
-- ✅ **Full TypeScript support** with strict mode enabled
-- ✅ **IntelliSense support** for all methods and properties
+### 🚀 Performance & Reliability
+
+Get your service account key from [Firebase Console](https://console.firebase.google.com/) → Project Settings → Service Accounts- ✅ **Automatic batch size validation** (Firestore 500-document limit)
+
+- ✅ **Race condition prevention** in batch operations
+
+```typescript- ✅ **Transaction consistency** - all critical operations use Firestore transactions
+
+import admin from 'firebase-admin';- ✅ **Memory leak prevention** in real-time subscriptions
+
+import serviceAccount from './serviceAccountKey.json';- ✅ **Optimized query execution** with proper indexing hints
+
+
+
+admin.initializeApp({### 📝 Developer Experience
+
+  credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),- ✅ **Full TypeScript support** with strict mode enabled
+
+});- ✅ **IntelliSense support** for all methods and properties
+
 - ✅ **Automatic timestamp management** (`createdAt`, `updatedAt`)
-- ✅ **Comprehensive error messages** for easy debugging
-- ✅ **Null safety checks** throughout the codebase
+
+const db = admin.firestore();- ✅ **Comprehensive error messages** for easy debugging
+
+```- ✅ **Null safety checks** throughout the codebase
+
 - ✅ **Generic type constraints** for better type inference
 
+### 2. Define Your Interface
+
 ### 🎯 Production Ready
-- ✅ **Battle-tested** transaction handling
-- ✅ **ES2020 target** for modern Node.js environments
+
+```typescript- ✅ **Battle-tested** transaction handling
+
+import { BaseDocument, FirestoreHelper } from 'ts-firestore-admin-helper';- ✅ **ES2020 target** for modern Node.js environments
+
 - ✅ **Well-documented** API with examples
-- ✅ **No breaking changes** in patch updates
 
----
+interface User extends BaseDocument {- ✅ **No breaking changes** in patch updates
 
-## 📦 Installation
+  name: string;
+
+  email: string;---
+
+  age: number;
+
+}## 📦 Installation
+
+```
 
 ### Using NPM
 
-```bash
-npm install ts-firestore-admin-helper firebase-admin
-```
-
-### Using Yarn
+### 3. Create Helper Instance
 
 ```bash
+
+```typescriptnpm install ts-firestore-admin-helper firebase-admin
+
+const users = new FirestoreHelper<User>(db, 'users');```
+
+
+
+// Validate connection (optional but recommended)### Using Yarn
+
+await users.validateConnection();
+
+``````bash
+
 yarn add ts-firestore-admin-helper firebase-admin
-```
 
-### Using pnpm
+### 4. Use It!```
 
-```bash
-pnpm add ts-firestore-admin-helper firebase-admin
-```
 
----
 
-## 🚀 Quick Start
+```typescript### Using pnpm
 
-```typescript
+// Create
+
+const newUser = await users.addDocument({```bash
+
+  name: 'Alice',pnpm add ts-firestore-admin-helper firebase-admin
+
+  email: 'alice@example.com',```
+
+  age: 28,
+
+});---
+
+
+
+// Read## 🚀 Quick Start
+
+const user = await users.getDocumentData(newUser.id);
+
+console.log(user?.data.name); // "Alice"```typescript
+
 import admin from 'firebase-admin';
-import FirestoreHelper from 'ts-firestore-admin-helper';
+
+// Updateimport FirestoreHelper from 'ts-firestore-admin-helper';
+
+await users.editDocument(newUser.id, { age: 29 });
 
 // 1. Initialize Firebase Admin
-const serviceAccount = require('./serviceAccountKey.json');
 
-admin.initializeApp({
+// Deleteconst serviceAccount = require('./serviceAccountKey.json');
+
+await users.deleteDocument(newUser.id);
+
+```admin.initializeApp({
+
   credential: admin.credential.cert(serviceAccount)
+
+---});
+
+
+
+## 🎯 Basic Usageconst db = admin.firestore();
+
+
+
+### CRUD Operations// 2. Define your data interface
+
+interface User {
+
+#### Create Documents  name: string;
+
+  email: string;
+
+```typescript  role: 'admin' | 'user';
+
+// Add with auto-generated ID  isActive: boolean;
+
+const user = await users.addDocument({}
+
+  name: 'Bob',
+
+  email: 'bob@example.com',// 3. Create helper instance
+
+  age: 35,const usersCollection = new FirestoreHelper<User>(db, 'users');
+
 });
 
-const db = admin.firestore();
+console.log(user.id); // Auto-generated secure ID// 4. Validate connection (recommended)
 
-// 2. Define your data interface
-interface User {
-  name: string;
-  email: string;
-  role: 'admin' | 'user';
-  isActive: boolean;
-}
-
-// 3. Create helper instance
-const usersCollection = new FirestoreHelper<User>(db, 'users');
-
-// 4. Validate connection (recommended)
 await usersCollection.validateConnection();
 
-// 5. Start using!
-const newUser = await usersCollection.addDocument({
-  name: 'John Doe',
-  email: 'john@example.com',
-  role: 'user',
-  isActive: true
-});
+// Add with custom ID
 
-console.log('User created:', newUser.id);
+await users.addDocument(// 5. Start using!
+
+  {const newUser = await usersCollection.addDocument({
+
+    name: 'Charlie',  name: 'John Doe',
+
+    email: 'charlie@example.com',  email: 'john@example.com',
+
+    age: 40,  role: 'user',
+
+  },  isActive: true
+
+  'custom-user-id'});
+
+);
+
+```console.log('User created:', newUser.id);
+
 ```
+
+#### Read Documents
 
 ---
 
-## 🛠️ Setup Guide
+```typescript
 
-### Step 1: Get Firebase Service Account Key
+// Get full document (includes metadata)## 🛠️ Setup Guide
 
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Select your project
-3. Go to **Project Settings** > **Service Accounts**
+const docResult = await users.getDocument('user-id');
+
+if (docResult) {### Step 1: Get Firebase Service Account Key
+
+  console.log(docResult.id);
+
+  console.log(docResult.data.name);1. Go to [Firebase Console](https://console.firebase.google.com/)
+
+  console.log(docResult.exists);2. Select your project
+
+}3. Go to **Project Settings** > **Service Accounts**
+
 4. Click **Generate New Private Key**
-5. Save the JSON file securely (e.g., `serviceAccountKey.json`)
 
-⚠️ **IMPORTANT**: Never commit this file to version control!
+// Get only document data5. Save the JSON file securely (e.g., `serviceAccountKey.json`)
 
-Add to `.gitignore`:
+const userData = await users.getDocumentData('user-id');
+
+if (userData) {⚠️ **IMPORTANT**: Never commit this file to version control!
+
+  console.log(userData.data.name);
+
+}Add to `.gitignore`:
+
 ```
-serviceAccountKey.json
-*-firebase-adminsdk-*.json
+
+// Get all documentsserviceAccountKey.json
+
+const allUsers = await users.getAllDocuments();*-firebase-adminsdk-*.json
+
+console.log(`Total users: ${allUsers.length}`);```
+
 ```
 
 ### Step 2: Initialize Firebase Admin SDK
 
+#### Update Documents
+
 ```typescript
-import admin from 'firebase-admin';
-import * as path from 'path';
 
-// Option 1: Using service account file
-const serviceAccount = require(path.join(__dirname, '../serviceAccountKey.json'));
+```typescriptimport admin from 'firebase-admin';
+
+// Partial updateimport * as path from 'path';
+
+await users.editDocument('user-id', {
+
+  age: 36,// Option 1: Using service account file
+
+});const serviceAccount = require(path.join(__dirname, '../serviceAccountKey.json'));
+
+
+
+// Update with timestamp fieldsif (admin.apps.length === 0) {
+
+await users.editDocument('user-id', {  admin.initializeApp({
+
+  name: 'Updated Name',    credential: admin.credential.cert(serviceAccount),
+
+  updatedAt: Date.now(), // Auto-managed by default    databaseURL: 'https://your-project.firebaseio.com' // Optional
+
+});  });
+
+```}
+
+
+
+#### Delete Documents// Option 2: Using environment variables (recommended for production)
 
 if (admin.apps.length === 0) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: 'https://your-project.firebaseio.com' // Optional
-  });
-}
 
-// Option 2: Using environment variables (recommended for production)
-if (admin.apps.length === 0) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
+```typescript  admin.initializeApp({
+
+// Delete single document    credential: admin.credential.cert({
+
+await users.deleteDocument('user-id');      projectId: process.env.FIREBASE_PROJECT_ID,
+
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
+
+// Delete multiple documents      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+
+await users.deleteDocuments(['id1', 'id2', 'id3']);    }),
+
+```  });
+
 }
-
-const db = admin.firestore();
-```
-
-### Step 3: Define Your Collection Interfaces
-
-```typescript
-// types/collections.ts
-
-export interface User {
-  name: string;
-  email: string;
-  role: 'admin' | 'user' | 'moderator';
-  isActive: boolean;
-  metadata?: {
-    lastLogin?: number;
-    loginCount?: number;
-  };
-}
-
-export interface Product {
-  name: string;
-  description: string;
-  price: number;
-  stock: number;
-  category: string;
-  tags: string[];
-  isAvailable: boolean;
-}
-
-export interface Order {
-  userId: string;
-  productIds: string[];
-  totalAmount: number;
-  status: 'pending' | 'processing' | 'completed' | 'cancelled';
-  shippingAddress: {
-    street: string;
-    city: string;
-    zipCode: string;
-  };
-}
-```
-
-### Step 4: Create Helper Instances
-
-```typescript
-// services/collections.ts
-
-import FirestoreHelper from 'ts-firestore-admin-helper';
-import { User, Product, Order } from './types/collections';
-import { db } from './firebase'; // Your Firebase initialization
-
-export const usersCollection = new FirestoreHelper<User>(db, 'users');
-export const productsCollection = new FirestoreHelper<Product>(db, 'products');
-export const ordersCollection = new FirestoreHelper<Order>(db, 'orders');
-
-// Validate connections on startup
-export async function validateFirestoreConnections() {
-  try {
-    await Promise.all([
-      usersCollection.validateConnection(),
-      productsCollection.validateConnection(),
-      ordersCollection.validateConnection(),
-    ]);
-    console.log('✅ All Firestore connections validated');
-  } catch (error) {
-    console.error('❌ Firestore connection failed:', error);
-    throw error;
-  }
-}
-```
-
-### Step 5: Use in Your Application
-
-```typescript
-// index.ts or server.ts
-
-import { validateFirestoreConnections, usersCollection } from './services/collections';
-
-async function main() {
-  // Validate connections on startup
-  await validateFirestoreConnections();
-  
-  // Your application logic
-  const users = await usersCollection.findDocumentsData([
-    { field: 'isActive', operator: '==', value: true }
-  ]);
-  
-  console.log(`Found ${users.length} active users`);
-}
-
-main().catch(console.error);
-```
 
 ---
 
-## 💡 Usage Examples
+const db = admin.firestore();
 
-### Basic CRUD Operations
+### Batch Operations```
+
+
+
+Efficiently create, update, or delete multiple documents.### Step 3: Define Your Collection Interfaces
+
+
+
+```typescript```typescript
+
+// Batch create (auto-generated IDs)// types/collections.ts
+
+const newUsers = await users.batchAddDocuments([
+
+  { name: 'User 1', email: 'user1@example.com', age: 25 },export interface User {
+
+  { name: 'User 2', email: 'user2@example.com', age: 30 },  name: string;
+
+  { name: 'User 3', email: 'user3@example.com', age: 35 },  email: string;
+
+]);  role: 'admin' | 'user' | 'moderator';
+
+  isActive: boolean;
+
+console.log(newUsers); // Array of IDs  metadata?: {
+
+    lastLogin?: number;
+
+// Batch create with custom IDs    loginCount?: number;
+
+const customUsers = [  };
+
+  { id: 'user-1', data: { name: 'Alice', email: 'alice@example.com', age: 28 } },}
+
+  { id: 'user-2', data: { name: 'Bob', email: 'bob@example.com', age: 32 } },
+
+];export interface Product {
+
+  name: string;
+
+await users.batchAddDocumentsWithIds(customUsers);  description: string;
+
+  price: number;
+
+// Batch update  stock: number;
+
+await users.batchEditDocuments([  category: string;
+
+  { id: 'user-1', data: { age: 29 } },  tags: string[];
+
+  { id: 'user-2', data: { age: 33 } },  isAvailable: boolean;
+
+]);}
+
+
+
+// Batch deleteexport interface Order {
+
+await users.deleteDocuments(['user-1', 'user-2', 'user-3']);  userId: string;
+
+```  productIds: string[];
+
+  totalAmount: number;
+
+**Note:** Firestore has a 500-document limit per batch. This library automatically validates batch sizes.  status: 'pending' | 'processing' | 'completed' | 'cancelled';
+
+  shippingAddress: {
+
+---    street: string;
+
+    city: string;
+
+### Queries    zipCode: string;
+
+  };
+
+Type-safe querying with filters, sorting, and pagination.}
+
+```
 
 ```typescript
-// CREATE - Add a new document
-const user = await usersCollection.addDocument({
-  name: 'Alice Smith',
-  email: 'alice@example.com',
-  role: 'user',
-  isActive: true
-});
-console.log('Created user:', user.id);
 
-// CREATE with custom ID
-const adminUser = await usersCollection.addDocument(
-  {
-    name: 'Admin User',
-    email: 'admin@example.com',
-    role: 'admin',
-    isActive: true
-  },
-  'admin-001' // Custom ID
-);
+// Simple filter### Step 4: Create Helper Instances
 
-// CREATE with override (replace if exists)
-const updatedUser = await usersCollection.addDocument(
-  {
-    name: 'Updated Admin',
-    email: 'admin@example.com',
-    role: 'admin',
-    isActive: true
-  },
-  'admin-001',
-  true // Override existing
-);
+const adults = await users.findDocumentsData([
 
-// READ - Get single document
-const userData = await usersCollection.getDocumentData('admin-001');
-if (userData) {
-  console.log('User:', userData.data.name);
+  { field: 'age', operator: '>=', value: 18 },```typescript
+
+]);// services/collections.ts
+
+
+
+// Multiple filtersimport FirestoreHelper from 'ts-firestore-admin-helper';
+
+const activeAdults = await users.findDocumentsData([import { User, Product, Order } from './types/collections';
+
+  { field: 'age', operator: '>=', value: 18 },import { db } from './firebase'; // Your Firebase initialization
+
+  { field: 'isActive', operator: '==', value: true },
+
+]);export const usersCollection = new FirestoreHelper<User>(db, 'users');
+
+export const productsCollection = new FirestoreHelper<Product>(db, 'products');
+
+// With sorting and limitexport const ordersCollection = new FirestoreHelper<Order>(db, 'orders');
+
+const topUsers = await users.findDocumentsData(
+
+  [{ field: 'age', operator: '>=', value: 18 }],// Validate connections on startup
+
+  {export async function validateFirestoreConnections() {
+
+    orderBy: 'age',  try {
+
+    orderDirection: 'desc',    await Promise.all([
+
+    limit: 10,      usersCollection.validateConnection(),
+
+  }      productsCollection.validateConnection(),
+
+);      ordersCollection.validateConnection(),
+
+    ]);
+
+// Pagination    console.log('✅ All Firestore connections validated');
+
+const page1 = await users.findDocumentsData([], { limit: 20 });  } catch (error) {
+
+    console.error('❌ Firestore connection failed:', error);
+
+if (page1.length > 0) {    throw error;
+
+  const lastDoc = page1[page1.length - 1];  }
+
+  const page2 = await users.findDocumentsData([], {}
+
+    limit: 20,```
+
+    startAfter: lastDoc.data.createdAt, // Use createdAt for cursor
+
+  });### Step 5: Use in Your Application
+
 }
 
-// UPDATE - Edit document
-await usersCollection.editDocument('admin-001', {
-  isActive: false,
-  metadata: {
-    lastLogin: Date.now()
-  }
-});
+``````typescript
 
-// DELETE - Remove document
-await usersCollection.removeDocument('user-123');
-```
+// index.ts or server.ts
 
-### Batch Operations
+**Supported operators:**
 
-```typescript
-// BATCH ADD - Create multiple documents
-await usersCollection.batchAdd([
-  {
-    data: {
-      name: 'User 1',
-      email: 'user1@example.com',
-      role: 'user',
-      isActive: true
-    }
-  },
-  {
-    id: 'custom-id-001',
-    data: {
-      name: 'User 2',
-      email: 'user2@example.com',
-      role: 'user',
-      isActive: true
-    },
-    override: false
-  }
-  // ... up to 500 documents
-]);
+- `==` - Equal toimport { validateFirestoreConnections, usersCollection } from './services/collections';
 
-// BATCH EDIT - Update multiple documents
-await usersCollection.batchEdit([
-  {
-    id: 'user-001',
-    data: { isActive: false }
-  },
-  {
-    id: 'user-002',
-    data: { role: 'moderator' }
-  }
-]);
+- `!=` - Not equal to
 
-// BATCH REMOVE - Delete multiple documents
-await usersCollection.batchRemove(['user-001', 'user-002', 'user-003']);
-```
+- `<` - Less thanasync function main() {
 
-### Query Operations
+- `<=` - Less than or equal to  // Validate connections on startup
 
-```typescript
-// FIND - Query with single condition
-const activeUsers = await usersCollection.findDocumentsData([
-  { field: 'isActive', operator: '==', value: true }
-]);
+- `>` - Greater than  await validateFirestoreConnections();
 
-// FIND - Query with multiple conditions
-const adminUsers = await usersCollection.findDocumentsData([
-  { field: 'role', operator: '==', value: 'admin' },
-  { field: 'isActive', operator: '==', value: true }
-]);
+- `>=` - Greater than or equal to  
 
-// FIND - Query with options (sorting, limiting, pagination)
-const recentUsers = await usersCollection.findDocumentsData(
-  [{ field: 'isActive', operator: '==', value: true }],
-  {
-    orderBy: 'createdAt',
-    orderDirection: 'desc',
-    limit: 10
-  }
-);
+- `array-contains` - Array contains value  // Your application logic
 
-// FIND - Pagination
-const firstPage = await usersCollection.findDocumentsData(
-  [],
-  {
-    orderBy: 'createdAt',
-    limit: 20
-  }
-);
+- `array-contains-any` - Array contains any of the values  const users = await usersCollection.findDocumentsData([
 
-const secondPage = await usersCollection.findDocumentsData(
-  [],
-  {
-    orderBy: 'createdAt',
-    limit: 20,
-    startAfterId: firstPage[firstPage.length - 1].id // Last ID from first page
-  }
-);
+- `in` - In array    { field: 'isActive', operator: '==', value: true }
 
-// FIND ONE - Get first matching document
-const firstAdmin = await usersCollection.findDocumentData([
-  { field: 'role', operator: '==', value: 'admin' }
-]);
+- `not-in` - Not in array  ]);
 
-if (firstAdmin) {
-  console.log('First admin:', firstAdmin.data.name);
+  
+
+---  console.log(`Found ${users.length} active users`);
+
 }
-```
 
 ### Real-time Subscriptions
 
-```typescript
-// SUBSCRIBE to a single document
-const unsubscribeUser = usersCollection.subscribeDocument(
-  'user-001',
-  (doc) => {
-    console.log('User updated:', doc.data);
-    console.log('Updated at:', doc.data.updatedAt);
+main().catch(console.error);
+
+Listen to document changes in real-time.```
+
+
+
+```typescript---
+
+// Subscribe to single document
+
+const unsubscribeDoc = users.subscribeToDocument(## 💡 Usage Examples
+
+  'user-id',
+
+  (data) => {### Basic CRUD Operations
+
+    if (data) {
+
+      console.log('Document updated:', data.name);```typescript
+
+    } else {// CREATE - Add a new document
+
+      console.log('Document deleted');const user = await usersCollection.addDocument({
+
+    }  name: 'Alice Smith',
+
+  },  email: 'alice@example.com',
+
+  (error) => {  role: 'user',
+
+    console.error('Subscription error:', error);  isActive: true
+
+  }});
+
+);console.log('Created user:', user.id);
+
+
+
+// Subscribe to query results// CREATE with custom ID
+
+const unsubscribeQuery = users.subscribeToDocuments(const adminUser = await usersCollection.addDocument(
+
+  [{ field: 'age', operator: '>=', value: 18 }],  {
+
+  (documents) => {    name: 'Admin User',
+
+    console.log(`Found ${documents.length} adults`);    email: 'admin@example.com',
+
+    documents.forEach((doc) => {    role: 'admin',
+
+      console.log(doc.data.name, doc.data.age);    isActive: true
+
+    });  },
+
+  },  'admin-001' // Custom ID
+
+  (error) => {);
+
+    console.error('Query subscription error:', error);
+
+  },// CREATE with override (replace if exists)
+
+  {const updatedUser = await usersCollection.addDocument(
+
+    orderBy: 'age',  {
+
+    orderDirection: 'desc',    name: 'Updated Admin',
+
+  }    email: 'admin@example.com',
+
+);    role: 'admin',
+
+    isActive: true
+
+// Clean up when done  },
+
+unsubscribeDoc();  'admin-001',
+
+unsubscribeQuery();  true // Override existing
+
+```);
+
+
+
+**Important:** Always unsubscribe to prevent memory leaks!// READ - Get single document
+
+const userData = await usersCollection.getDocumentData('admin-001');
+
+---if (userData) {
+
+  console.log('User:', userData.data.name);
+
+### Transactions}
+
+
+
+ACID-compliant operations for critical updates.// UPDATE - Edit document
+
+await usersCollection.editDocument('admin-001', {
+
+#### Atomic Increment/Decrement  isActive: false,
+
+  metadata: {
+
+Thread-safe numeric updates (e.g., counters, balances).    lastLogin: Date.now()
+
   }
-);
 
-// Later: unsubscribe
-// unsubscribeUser();
+```typescript});
 
-// SUBSCRIBE to entire collection
-const unsubscribeCollection = usersCollection.subscribeCollection(
-  (snapshot) => {
-    console.log(`Total users: ${snapshot.size}`);
-    snapshot.forEach(doc => {
-      console.log('User:', doc.id, doc.data());
-    });
-  }
-);
+// Increment
 
-// SUBSCRIBE to query results
-const unsubscribeQuery = usersCollection.subscribeQuery(
-  [
-    { field: 'role', operator: '==', value: 'admin' },
-    { field: 'isActive', operator: '==', value: true }
-  ],
-  (snapshot) => {
-    console.log(`Active admins: ${snapshot.size}`);
-    snapshot.docs.forEach(doc => {
-      console.log('Admin:', doc.data().name);
-    });
-  }
-);
+const result = await users.atomicIncrement('user-id', 'age', 1);// DELETE - Remove document
 
-// Cleanup on app shutdown
-process.on('SIGINT', () => {
-  unsubscribeUser();
-  unsubscribeCollection();
-  unsubscribeQuery();
-  process.exit(0);
-});
+console.log('New age:', result.data.age);await usersCollection.removeDocument('user-123');
+
 ```
 
-### Advanced Query Examples
+// Decrement
+
+await users.atomicIncrement('user-id', 'balance', -100);### Batch Operations
+
+
+
+// Works with any numeric field```typescript
+
+await users.atomicIncrement('post-id', 'likes', 1);// BATCH ADD - Create multiple documents
+
+await users.atomicIncrement('post-id', 'views', 1);await usersCollection.batchAdd([
+
+```  {
+
+    data: {
+
+#### Conditional Updates (Optimistic Locking)      name: 'User 1',
+
+      email: 'user1@example.com',
+
+Update only if a field has expected value. Prevents race conditions.      role: 'user',
+
+      isActive: true
+
+```typescript    }
+
+// Update only if status is 'pending'  },
+
+const result = await users.conditionalUpdate(  {
+
+  'order-id',    id: 'custom-id-001',
+
+  'status',    data: {
+
+  'pending',      name: 'User 2',
+
+  {      email: 'user2@example.com',
+
+    status: 'processing',      role: 'user',
+
+    processedAt: Date.now(),      isActive: true
+
+  }    },
+
+);    override: false
+
+  }
+
+if (result) {  // ... up to 500 documents
+
+  console.log('Order claimed for processing');]);
+
+} else {
+
+  console.log('Order already being processed');// BATCH EDIT - Update multiple documents
+
+}await usersCollection.batchEdit([
+
+```  {
+
+    id: 'user-001',
+
+#### Custom Transactions    data: { isActive: false }
+
+  },
+
+Full control for complex multi-document updates.  {
+
+    id: 'user-002',
+
+```typescript    data: { role: 'moderator' }
+
+// Transfer balance between users  }
+
+const transfer = await users.runTransaction(async (transaction) => {]);
+
+  const senderRef = users.doc('sender-id');
+
+  const receiverRef = users.doc('receiver-id');// BATCH REMOVE - Delete multiple documents
+
+await usersCollection.batchRemove(['user-001', 'user-002', 'user-003']);
+
+  const senderDoc = await transaction.get(senderRef);```
+
+  const receiverDoc = await transaction.get(receiverRef);
+
+### Query Operations
+
+  if (!senderDoc.exists || !receiverDoc.exists) {
+
+    throw new Error('User not found');```typescript
+
+  }// FIND - Query with single condition
+
+const activeUsers = await usersCollection.findDocumentsData([
+
+  const sender = senderDoc.data();  { field: 'isActive', operator: '==', value: true }
+
+  const receiver = receiverDoc.data();]);
+
+
+
+  if (!sender || !receiver) {// FIND - Query with multiple conditions
+
+    throw new Error('Invalid data');const adminUsers = await usersCollection.findDocumentsData([
+
+  }  { field: 'role', operator: '==', value: 'admin' },
+
+  { field: 'isActive', operator: '==', value: true }
+
+  const amount = 100;]);
+
+
+
+  if (sender.balance < amount) {// FIND - Query with options (sorting, limiting, pagination)
+
+    throw new Error('Insufficient balance');const recentUsers = await usersCollection.findDocumentsData(
+
+  }  [{ field: 'isActive', operator: '==', value: true }],
+
+  {
+
+  // Atomic update of both documents    orderBy: 'createdAt',
+
+  transaction.update(senderRef, {    orderDirection: 'desc',
+
+    balance: sender.balance - amount,    limit: 10
+
+    updatedAt: Date.now(),  }
+
+  }););
+
+
+
+  transaction.update(receiverRef, {// FIND - Pagination
+
+    balance: receiver.balance + amount,const firstPage = await usersCollection.findDocumentsData(
+
+    updatedAt: Date.now(),  [],
+
+  });  {
+
+    orderBy: 'createdAt',
+
+  return { success: true, amount };    limit: 20
+
+});  }
+
+);
+
+console.log('Transfer completed:', transfer.amount);
+
+```const secondPage = await usersCollection.findDocumentsData(
+
+  [],
+
+---  {
+
+    orderBy: 'createdAt',
+
+## 📚 API Reference    limit: 20,
+
+    startAfterId: firstPage[firstPage.length - 1].id // Last ID from first page
+
+### Constructor  }
+
+);
 
 ```typescript
+
+new FirestoreHelper<T>(db: Firestore, collectionName: string)// FIND ONE - Get first matching document
+
+```const firstAdmin = await usersCollection.findDocumentData([
+
+  { field: 'role', operator: '==', value: 'admin' }
+
+- `db`: Firebase Firestore instance]);
+
+- `collectionName`: Name of the collection
+
+- `T`: Document interface extending `BaseDocument`if (firstAdmin) {
+
+  console.log('First admin:', firstAdmin.data.name);
+
+### Methods}
+
+```
+
+#### Document Operations
+
+### Real-time Subscriptions
+
+| Method | Description | Returns |
+
+|--------|-------------|---------|```typescript
+
+| `addDocument(data, customId?)` | Create document | `Promise<{ id: string }>` |// SUBSCRIBE to a single document
+
+| `getDocument(id)` | Get document with metadata | `Promise<DocumentResult<T> \| null>` |const unsubscribeUser = usersCollection.subscribeDocument(
+
+| `getDocumentData(id)` | Get document data only | `Promise<DocumentDataResult<T> \| null>` |  'user-001',
+
+| `getAllDocuments()` | Get all documents | `Promise<DocumentResult<T>[]>` |  (doc) => {
+
+| `editDocument(id, data)` | Update document | `Promise<void>` |    console.log('User updated:', doc.data);
+
+| `deleteDocument(id)` | Delete document | `Promise<void>` |    console.log('Updated at:', doc.data.updatedAt);
+
+  }
+
+#### Batch Operations);
+
+
+
+| Method | Description | Returns |// Later: unsubscribe
+
+|--------|-------------|---------|// unsubscribeUser();
+
+| `batchAddDocuments(documents)` | Batch create (auto IDs) | `Promise<string[]>` |
+
+| `batchAddDocumentsWithIds(documents)` | Batch create (custom IDs) | `Promise<void>` |// SUBSCRIBE to entire collection
+
+| `batchEditDocuments(updates)` | Batch update | `Promise<void>` |const unsubscribeCollection = usersCollection.subscribeCollection(
+
+| `deleteDocuments(ids)` | Batch delete | `Promise<void>` |  (snapshot) => {
+
+    console.log(`Total users: ${snapshot.size}`);
+
+#### Query Operations    snapshot.forEach(doc => {
+
+      console.log('User:', doc.id, doc.data());
+
+| Method | Description | Returns |    });
+
+|--------|-------------|---------|  }
+
+| `findDocuments(filters, options?)` | Query with metadata | `Promise<DocumentResult<T>[]>` |);
+
+| `findDocumentsData(filters, options?)` | Query data only | `Promise<DocumentDataResult<T>[]>` |
+
+// SUBSCRIBE to query results
+
+**Query Options:**const unsubscribeQuery = usersCollection.subscribeQuery(
+
+```typescript  [
+
+{    { field: 'role', operator: '==', value: 'admin' },
+
+  orderBy?: keyof T;    { field: 'isActive', operator: '==', value: true }
+
+  orderDirection?: 'asc' | 'desc';  ],
+
+  limit?: number;  (snapshot) => {
+
+  startAfter?: any;    console.log(`Active admins: ${snapshot.size}`);
+
+}    snapshot.docs.forEach(doc => {
+
+```      console.log('Admin:', doc.data().name);
+
+    });
+
+#### Subscription Operations  }
+
+);
+
+| Method | Description | Returns |
+
+|--------|-------------|---------|// Cleanup on app shutdown
+
+| `subscribeToDocument(id, callback, errorCallback)` | Real-time document | `Unsubscribe` |process.on('SIGINT', () => {
+
+| `subscribeToDocuments(filters, callback, errorCallback, options?)` | Real-time query | `Unsubscribe` |  unsubscribeUser();
+
+  unsubscribeCollection();
+
+#### Transaction Operations  unsubscribeQuery();
+
+  process.exit(0);
+
+| Method | Description | Returns |});
+
+|--------|-------------|---------|```
+
+| `runTransaction<R>(callback)` | Custom transaction | `Promise<R>` |
+
+| `doc(id)` | Get document reference | `DocumentReference` |### Advanced Query Examples
+
+| `atomicIncrement(id, field, value)` | Atomic +/- operation | `Promise<DocumentDataResult<T>>` |
+
+| `conditionalUpdate(id, field, expected, newData)` | Optimistic locking | `Promise<DocumentDataResult<T> \| null>` |```typescript
+
 // Array contains query
-const taggedProducts = await productsCollection.findDocumentsData([
+
+#### Utility Methodsconst taggedProducts = await productsCollection.findDocumentsData([
+
   { field: 'tags', operator: 'array-contains', value: 'featured' }
+
+| Method | Description | Returns |]);
+
+|--------|-------------|---------|
+
+| `validateConnection()` | Test Firestore connection | `Promise<boolean>` |// In query (multiple values)
+
+const specificRoles = await usersCollection.findDocumentsData([
+
+---  { field: 'role', operator: 'in', value: ['admin', 'moderator'] }
+
 ]);
 
-// In query (multiple values)
-const specificRoles = await usersCollection.findDocumentsData([
-  { field: 'role', operator: 'in', value: ['admin', 'moderator'] }
-]);
+## 🎓 Advanced Examples
 
 // Range query
-const affordableProducts = await productsCollection.findDocumentsData([
-  { field: 'price', operator: '>=', value: 10 },
-  { field: 'price', operator: '<=', value: 100 }
-]);
 
-// Not equal query (Firestore 9.9+)
-const nonPendingOrders = await ordersCollection.findDocumentsData([
+For production-ready examples including:const affordableProducts = await productsCollection.findDocumentsData([
+
+- 🛒 E-commerce inventory management  { field: 'price', operator: '>=', value: 10 },
+
+- 💰 Financial transactions with ACID guarantees  { field: 'price', operator: '<=', value: 100 }
+
+- 🎫 Event booking with capacity management]);
+
+- 📝 Collaborative editing with conflict resolution
+
+- 🎮 Gaming leaderboards and loyalty points// Not equal query (Firestore 9.9+)
+
+- 📱 Social media engagement countersconst nonPendingOrders = await ordersCollection.findDocumentsData([
+
   { field: 'status', operator: '!=', value: 'pending' }
-]);
+
+**See:** [EXAMPLES.md](./EXAMPLES.md)]);
+
 ```
 
 ---
 
+---
+
+## 💡 Best Practices
+
 ## 📚 API Reference
+
+### 1. Always Extend BaseDocument
 
 ### Constructor
 
 ```typescript
-new FirestoreHelper<T extends BaseDocument>(
-  firestoreInstance: admin.firestore.Firestore,
-  collectionPath: string
+
+// ✅ Good```typescript
+
+interface User extends BaseDocument {new FirestoreHelper<T extends BaseDocument>(
+
+  name: string;  firestoreInstance: admin.firestore.Firestore,
+
+}  collectionPath: string
+
 )
+
+// ❌ Bad```
+
+interface User {
+
+  name: string;**Parameters:**
+
+}- `firestoreInstance`: Initialized Firestore instance from Firebase Admin SDK
+
+```- `collectionPath`: Path to the collection (e.g., `'users'`, `'products/prod-1/reviews'`)
+
+
+
+### 2. Validate Connection on Startup**Returns:** `FirestoreHelper<T>` instance
+
+
+
+```typescript---
+
+const users = new FirestoreHelper<User>(db, 'users');
+
+await users.validateConnection(); // Catch config issues early### Methods
+
 ```
-
-**Parameters:**
-- `firestoreInstance`: Initialized Firestore instance from Firebase Admin SDK
-- `collectionPath`: Path to the collection (e.g., `'users'`, `'products/prod-1/reviews'`)
-
-**Returns:** `FirestoreHelper<T>` instance
-
----
-
-### Methods
 
 #### `validateConnection(): Promise<void>`
 
+### 3. Use Transactions for Critical Operations
+
 Validates the Firestore connection by performing a test read operation.
 
-**Recommended**: Call this method after initialization to ensure connectivity.
-
 ```typescript
-await usersCollection.validateConnection();
+
+// ✅ Good: Atomic balance transfer**Recommended**: Call this method after initialization to ensure connectivity.
+
+await users.runTransaction(async (tx) => {
+
+  // Read both, validate, update both```typescript
+
+});await usersCollection.validateConnection();
+
 ```
 
-**Throws:** Error if connection fails
+// ❌ Bad: Race condition risk
 
----
+const sender = await users.getDocumentData('sender-id');**Throws:** Error if connection fails
+
+await users.editDocument('sender-id', { balance: sender.balance - 100 });
+
+await users.editDocument('receiver-id', { balance: receiver.balance + 100 });---
+
+```
 
 #### `addDocument(data, id?, override?): Promise<{id: string; data: T}>`
 
+### 4. Always Unsubscribe from Real-time Listeners
+
 Creates a new document in the collection.
 
-**Parameters:**
+```typescript
+
+const unsubscribe = users.subscribeToDocument('id', callback);**Parameters:**
+
 - `data: T` - Document data (required)
-- `id?: string` - Custom document ID (optional, auto-generated if not provided)
-- `override?: boolean` - Replace existing document if ID exists (default: `false`)
+
+// When done (e.g., component unmount)- `id?: string` - Custom document ID (optional, auto-generated if not provided)
+
+unsubscribe();- `override?: boolean` - Replace existing document if ID exists (default: `false`)
+
+```
 
 **Returns:** Object with `id` and complete `data` (including timestamps)
 
-**Features:**
-- Auto-generates secure 30-character ID if not provided
-- Validates document data is not empty
-- Validates custom ID format
-- Automatically adds `createdAt` and `updatedAt` timestamps
-- Uses Firestore transaction for consistency
+### 5. Handle Errors Gracefully
 
-**Example:**
-```typescript
-const doc = await collection.addDocument(
+**Features:**
+
+```typescript- Auto-generates secure 30-character ID if not provided
+
+try {- Validates document data is not empty
+
+  await users.addDocument({ name: 'Alice', email: 'alice@example.com', age: 28 });- Validates custom ID format
+
+} catch (error) {- Automatically adds `createdAt` and `updatedAt` timestamps
+
+  if (error instanceof Error) {- Uses Firestore transaction for consistency
+
+    console.error('Failed to create user:', error.message);
+
+  }**Example:**
+
+}```typescript
+
+```const doc = await collection.addDocument(
+
   { name: 'John' },
-  'custom-id',
+
+### 6. Use Batch Operations for Multiple Documents  'custom-id',
+
   false
-);
-```
+
+```typescript);
+
+// ✅ Good: Single batch write```
+
+await users.batchAddDocuments([user1, user2, user3]);
 
 ---
 
-#### `editDocument(docId, data): Promise<{id: string; data: T}>`
+// ❌ Bad: Multiple individual writes
 
-Updates an existing document.
+await users.addDocument(user1);#### `editDocument(docId, data): Promise<{id: string; data: T}>`
+
+await users.addDocument(user2);
+
+await users.addDocument(user3);Updates an existing document.
+
+```
 
 **Parameters:**
-- `docId: string` - Document ID to update
+
+### 7. Validate Before Expensive Operations- `docId: string` - Document ID to update
+
 - `data: Partial<T>` - Fields to update
 
-**Returns:** Object with `id` and complete updated `data`
-
-**Features:**
-- Validates document exists
-- Prevents updating document ID
-- Automatically updates `updatedAt` timestamp
-- Uses transaction for consistency
-- Merges with existing data
-
-**Example:**
 ```typescript
-const updated = await collection.editDocument('doc-id', {
+
+// ✅ Good: Validate first**Returns:** Object with `id` and complete updated `data`
+
+if (!email.includes('@')) {
+
+  throw new Error('Invalid email');**Features:**
+
+}- Validates document exists
+
+await users.addDocument({ name, email, age });- Prevents updating document ID
+
+- Automatically updates `updatedAt` timestamp
+
+// ❌ Bad: Validate inside transaction- Uses transaction for consistency
+
+```- Merges with existing data
+
+
+
+---**Example:**
+
+```typescript
+
+## 🐛 Troubleshootingconst updated = await collection.editDocument('doc-id', {
+
   name: 'Jane'
-});
+
+### Connection Issues});
+
 ```
+
+**Problem:** `Firestore connection failed`
 
 ---
 
-#### `removeDocument(docId): Promise<void>`
+**Solutions:**
 
-Deletes a document from the collection.
+1. Verify service account key is valid#### `removeDocument(docId): Promise<void>`
+
+2. Check Firebase project ID matches
+
+3. Ensure network connectivityDeletes a document from the collection.
+
+4. Verify IAM permissions in Google Cloud Console
 
 **Parameters:**
-- `docId: string` - Document ID to delete
 
-**Features:**
-- Validates document exists before deletion
-- Uses transaction for consistency
+```typescript- `docId: string` - Document ID to delete
 
-**Example:**
+// Test connection
+
+const isConnected = await users.validateConnection();**Features:**
+
+if (!isConnected) {- Validates document exists before deletion
+
+  console.error('Firestore connection failed');- Uses transaction for consistency
+
+}
+
+```**Example:**
+
 ```typescript
-await collection.removeDocument('doc-id');
+
+---await collection.removeDocument('doc-id');
+
 ```
 
+### Permission Denied
+
 ---
+
+**Problem:** `Missing or insufficient permissions`
 
 #### `batchAdd(documents): Promise<void>`
 
-Adds multiple documents in a single transaction.
+**Solutions:**
 
-**Parameters:**
-- `documents: Array<{id?: string; data: T; override?: boolean}>` - Array of documents to add
+1. Service account needs Firestore permissions:Adds multiple documents in a single transaction.
+
+   - `Cloud Datastore User` role minimum
+
+   - Or custom role with `datastore.*` permissions**Parameters:**
+
+2. Check Security Rules (for client SDKs, not Admin SDK)- `documents: Array<{id?: string; data: T; override?: boolean}>` - Array of documents to add
+
+3. Verify project ID in service account key
 
 **Limits:**
-- Maximum 500 documents per batch (Firestore limit)
+
+---- Maximum 500 documents per batch (Firestore limit)
+
 - Validates all documents before starting transaction
 
+### Batch Size Exceeded
+
 **Features:**
-- Generates all IDs before transaction (prevents race conditions)
+
+**Problem:** `Batch size exceeds Firestore limit`- Generates all IDs before transaction (prevents race conditions)
+
 - Validates all document data upfront
-- Atomic operation (all or nothing)
 
-**Example:**
+**Solutions:**- Atomic operation (all or nothing)
+
 ```typescript
-await collection.batchAdd([
+
+// ✅ Good: Chunk large batches**Example:**
+
+const allDocs = [...]; // 1000 documents```typescript
+
+const chunks = chunkArray(allDocs, 500); // Split into chunks of 500await collection.batchAdd([
+
   { data: { name: 'User 1' } },
-  { id: 'custom', data: { name: 'User 2' }, override: true }
-]);
+
+for (const chunk of chunks) {  { id: 'custom', data: { name: 'User 2' }, override: true }
+
+  await users.batchAddDocuments(chunk);]);
+
+}```
+
+
+
+function chunkArray<T>(array: T[], size: number): T[][] {---
+
+  return Array.from({ length: Math.ceil(array.length / size) }, (_, i) =>
+
+    array.slice(i * size, i * size + size)#### `batchEdit(updates): Promise<void>`
+
+  );
+
+}Updates multiple documents in a single transaction.
+
 ```
 
----
-
-#### `batchEdit(updates): Promise<void>`
-
-Updates multiple documents in a single transaction.
-
 **Parameters:**
-- `updates: Array<{id: string; data: Partial<T>}>` - Array of updates
+
+---- `updates: Array<{id: string; data: Partial<T>}>` - Array of updates
+
+
+
+### Transaction Conflicts**Limits:** Maximum 500 documents per batch
+
+
+
+**Problem:** Transaction fails with `ABORTED` or `FAILED_PRECONDITION`**Example:**
+
+```typescript
+
+**Solutions:**await collection.batchEdit([
+
+1. **Reduce contention**: Avoid updating hot documents simultaneously  { id: 'doc1', data: { name: 'Updated 1' } },
+
+2. **Retry with exponential backoff**:  { id: 'doc2', data: { name: 'Updated 2' } }
+
+```typescript]);
+
+async function retryTransaction<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {```
+
+  for (let i = 0; i < maxRetries; i++) {
+
+    try {---
+
+      return await fn();
+
+    } catch (error) {#### `batchRemove(docIds): Promise<void>`
+
+      if (i === maxRetries - 1) throw error;
+
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 100));Deletes multiple documents in a single transaction.
+
+    }
+
+  }**Parameters:**
+
+  throw new Error('Max retries exceeded');- `docIds: string[]` - Array of document IDs to delete
+
+}
 
 **Limits:** Maximum 500 documents per batch
 
-**Example:**
-```typescript
-await collection.batchEdit([
-  { id: 'doc1', data: { name: 'Updated 1' } },
-  { id: 'doc2', data: { name: 'Updated 2' } }
-]);
-```
+const result = await retryTransaction(() =>
+
+  users.atomicIncrement('user-id', 'balance', 100)**Example:**
+
+);```typescript
+
+```await collection.batchRemove(['doc1', 'doc2', 'doc3']);
+
+3. **Use smaller transactions**: Break up large operations```
+
+4. **Design for concurrency**: Use atomic operations instead of read-modify-write
 
 ---
-
-#### `batchRemove(docIds): Promise<void>`
-
-Deletes multiple documents in a single transaction.
-
-**Parameters:**
-- `docIds: string[]` - Array of document IDs to delete
-
-**Limits:** Maximum 500 documents per batch
-
-**Example:**
-```typescript
-await collection.batchRemove(['doc1', 'doc2', 'doc3']);
-```
 
 ---
 
 #### `getDocument(docId): Promise<DocumentSnapshot<T>>`
 
+### TypeScript Errors
+
 Gets a document snapshot.
+
+**Problem:** Type errors with document data
 
 **Returns:** Firestore DocumentSnapshot
 
-**Example:**
-```typescript
-const snapshot = await collection.getDocument('doc-id');
-if (snapshot.exists) {
-  console.log(snapshot.data());
-}
-```
+**Solutions:**
 
----
+```typescript**Example:**
 
-#### `getDocumentData(docId): Promise<{id: string; data: T} | null>`
+// ✅ Good: Proper interface definition```typescript
 
-Gets document data with null safety.
+interface User extends BaseDocument {const snapshot = await collection.getDocument('doc-id');
 
-**Returns:** Document object or `null` if not found
+  name: string;if (snapshot.exists) {
 
-**Example:**
-```typescript
-const doc = await collection.getDocumentData('doc-id');
-if (doc) {
+  email: string;  console.log(snapshot.data());
+
+  age: number;}
+
+}```
+
+
+
+const users = new FirestoreHelper<User>(db, 'users');---
+
+
+
+// ✅ TypeScript knows all fields#### `getDocumentData(docId): Promise<{id: string; data: T} | null>`
+
+const user = await users.getDocumentData('id');
+
+console.log(user?.data.name); // ✅ Type-safeGets document data with null safety.
+
+
+
+// ❌ Bad: Missing BaseDocument extension**Returns:** Document object or `null` if not found
+
+interface User {
+
+  name: string;**Example:**
+
+}```typescript
+
+// Error: Type 'User' does not satisfy constraint 'BaseDocument'const doc = await collection.getDocumentData('doc-id');
+
+```if (doc) {
+
   console.log(doc.data.name);
-}
+
+---}
+
 ```
 
+### Memory Leaks with Subscriptions
+
 ---
+
+**Problem:** Application memory grows over time
 
 #### `findDocuments(query, options?): Promise<QuerySnapshot<T>>`
 
-Finds documents matching query criteria.
+**Solutions:**
 
-**Parameters:**
-- `query: QueryPayload<T>[]` - Array of query conditions
+```typescriptFinds documents matching query criteria.
+
+// ✅ Good: Always unsubscribe
+
+class UserComponent {**Parameters:**
+
+  private unsubscribe?: () => void;- `query: QueryPayload<T>[]` - Array of query conditions
+
 - `options?: QueryOptions<T>` - Sorting, limiting, pagination
 
-**QueryPayload:**
-```typescript
-{
-  field: keyof T;
+  async mount() {
+
+    this.unsubscribe = users.subscribeToDocument('id', (data) => {**QueryPayload:**
+
+      this.updateUI(data);```typescript
+
+    });{
+
+  }  field: keyof T;
+
   operator: '==' | '!=' | '<' | '<=' | '>' | '>=' | 'array-contains' | 'in' | 'array-contains-any' | 'not-in';
-  value: any;
+
+  async unmount() {  value: any;
+
+    this.unsubscribe?.(); // Clean up}
+
+  }```
+
 }
-```
 
 **QueryOptions:**
-```typescript
-{
-  orderBy?: keyof T;
-  orderDirection?: 'asc' | 'desc';
-  limit?: number;
+
+// ❌ Bad: Never unsubscribe```typescript
+
+users.subscribeToDocument('id', (data) => {{
+
+  // Memory leak!  orderBy?: keyof T;
+
+});  orderDirection?: 'asc' | 'desc';
+
+```  limit?: number;
+
   startAfterId?: string; // For pagination
-}
+
+---}
+
 ```
+
+## 📖 More Resources
 
 **Returns:** Firestore QuerySnapshot
 
-**Example:**
-```typescript
-const snapshot = await collection.findDocuments(
-  [{ field: 'isActive', operator: '==', value: true }],
+- **[Advanced Examples](./EXAMPLES.md)** - Production-ready use cases
+
+- **[Changelog](./CHANGELOG.md)** - Version history**Example:**
+
+- **[Code Review Summary](./CODE_REVIEW_SUMMARY.md)** - Security audit results```typescript
+
+- **[Firebase Firestore Docs](https://firebase.google.com/docs/firestore)** - Official documentationconst snapshot = await collection.findDocuments(
+
+- **[TypeScript Handbook](https://www.typescriptlang.org/docs/)** - TypeScript guide  [{ field: 'isActive', operator: '==', value: true }],
+
   { orderBy: 'createdAt', limit: 10 }
-);
+
+---);
+
 ```
+
+## 🤝 Contributing
 
 ---
 
+Contributions welcome! Please:
+
 #### `findDocument(query): Promise<QueryDocumentSnapshot<T> | null>`
 
-Finds first document matching query.
+1. Fork the repository
 
-**Returns:** First matching document or `null`
+2. Create a feature branch: `git checkout -b feature/my-feature`Finds first document matching query.
+
+3. Commit changes: `git commit -m 'Add my feature'`
+
+4. Push to branch: `git push origin feature/my-feature`**Returns:** First matching document or `null`
+
+5. Open a Pull Request
+
+---
 
 ---
 
 #### `findDocumentsData(query, options?): Promise<Array<{id: string; data: T}>>`
 
+## 📄 License
+
 Finds documents and returns data array.
+
+MIT © [Rukanda Faridsi](https://github.com/rukandax)
 
 **Returns:** Array of document objects
 
-**Example:**
-```typescript
-const users = await collection.findDocumentsData([
-  { field: 'role', operator: '==', value: 'admin' }
-]);
-```
-
 ---
 
-#### `findDocumentData(query): Promise<{id: string; data: T} | null>`
+**Example:**
+
+## 🙋 Support```typescript
+
+const users = await collection.findDocumentsData([
+
+- **Issues:** [GitHub Issues](https://github.com/rukandax/ts-firestore-admin-helper/issues)  { field: 'role', operator: '==', value: 'admin' }
+
+- **Email:** rukanda.agen@gmail.com]);
+
+- **Docs:** [Full Documentation](https://github.com/rukandax/ts-firestore-admin-helper)```
+
+
+
+------
+
+
+
+**Made with ❤️ for the Firebase community**#### `findDocumentData(query): Promise<{id: string; data: T} | null>`
+
 
 Finds first document and returns data.
 

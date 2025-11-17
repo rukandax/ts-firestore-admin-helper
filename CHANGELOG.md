@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 📚 Documentation
+
+- **Restructured README.md**: Simple, focused documentation for better user onboarding
+  - Quick start guide (< 5 minutes to first working code)
+  - Clear separation of basic usage from advanced examples
+  - Comprehensive but concise API reference
+  - Troubleshooting section with common issues and solutions
+
+- **New EXAMPLES.md**: Production-ready real-world use cases
+  - E-commerce: Inventory management, order processing
+  - Financial: Wallet transfers with ACID guarantees
+  - Social Media: Post engagement counters
+  - Booking: Event seat management
+  - Collaboration: Document version control
+  - Gaming: Leaderboards and loyalty points systems
+  - 20+ complete examples with full TypeScript implementations
+
 ### ✨ New Features - Custom Transaction Support
 
 - **`runTransaction<R>(callback)`**: Execute custom transactions with full control
@@ -27,6 +44,7 @@ All notable changes to this project will be documented in this file.
   - State machine transitions
   - Version-based conflict detection
   - Returns null if condition not met
+
 
 ### 📝 Documentation
 
