@@ -327,7 +327,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
           updatedAt: this.getUnixTimestamp(),
         };
 
-        transaction.set(docRef, timestampedData, {merge: override});
+        transaction.set(docRef, timestampedData);
 
         return {id: docId, data: timestampedData};
       }
@@ -489,7 +489,7 @@ export default class FirestoreHelper<T extends BaseDocument = BaseDocument> {
           updatedAt: this.getUnixTimestamp(),
         };
 
-        transaction.set(docRef, timestampedData, {merge: override});
+        transaction.set(docRef, timestampedData);
       }
     });
   }

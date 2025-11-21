@@ -236,7 +236,7 @@ class FirestoreHelper {
                     : this.getUnixTimestamp(),
                 updatedAt: this.getUnixTimestamp(),
             };
-            transaction.set(docRef, timestampedData, { merge: override });
+            transaction.set(docRef, timestampedData, { merge: !override });
             return { id: docId, data: timestampedData };
         });
         return result;
@@ -356,7 +356,7 @@ class FirestoreHelper {
                     createdAt: existingData?.createdAt || this.getUnixTimestamp(),
                     updatedAt: this.getUnixTimestamp(),
                 };
-                transaction.set(docRef, timestampedData, { merge: override });
+                transaction.set(docRef, timestampedData, { merge: !override });
             }
         });
     }
