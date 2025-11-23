@@ -344,9 +344,15 @@ class FirestoreHelper {
             documentsWithIds.push({ id: finalId, data, override });
         }
         return this.firestoreInstance.runTransaction(async (transaction) => {
-            for (const { id, data, override } of documentsWithIds) {
-                const docRef = this.collection.doc(id);
-                const docSnapshot = await transaction.get(docRef);
+            const docRefs = documentsWithIds.map(doc => this.collection.doc(doc.id));
+            const docSnapshots = await Promise.all(docRefs.map(docRef => transaction.get(docRef)));
+            for (let i = 0; i < documentsWithIds.length; i++) {
+                const doc = documentsWithIds[i];
+                const docRef = docRefs[i];
+                const docSnapshot = docSnapshots[i];
+                if (!doc || !docRef || !docSnapshot)
+                    continue;
+                const { id, data, override } = doc;
                 if (!(override || !docSnapshot.exists)) {
                     throw new Error(`Document with ID ${id} already exists. Use "override: true" to replace the data.`);
                 }
@@ -388,13 +394,19 @@ class FirestoreHelper {
             processedUpdates.push({ id, cleanedData, fieldsToDelete });
         }
         return this.firestoreInstance.runTransaction(async (transaction) => {
-            for (const { id, cleanedData, fieldsToDelete } of processedUpdates) {
-                const docRef = this.collection.doc(id);
-                const docSnapshot = await transaction.get(docRef);
+            // 1. Read all docs first
+            const docRefs = processedUpdates.map(update => this.collection.doc(update.id));
+            const docSnapshots = await Promise.all(docRefs.map(docRef => transaction.get(docRef)));
+            for (let i = 0; i < processedUpdates.length; i++) {
+                const update = processedUpdates[i];
+                const docRef = docRefs[i];
+                const docSnapshot = docSnapshots[i];
+                if (!update || !docRef || !docSnapshot)
+                    continue;
+                const { id, cleanedData, fieldsToDelete } = update;
                 if (!docSnapshot.exists) {
                     throw new Error(`Document with ID ${id} does not exist`);
                 }
-                // Merge cleaned data with fields to delete
                 const timestampedData = {
                     ...cleanedData,
                     ...fieldsToDelete,
@@ -416,9 +428,15 @@ class FirestoreHelper {
             throw new Error(`Batch size exceeds Firestore limit. Maximum ${MAX_BATCH_SIZE} documents allowed, received ${docIds.length}`);
         }
         return this.firestoreInstance.runTransaction(async (transaction) => {
-            for (const id of docIds) {
-                const docRef = this.collection.doc(id);
-                const docSnapshot = await transaction.get(docRef);
+            // 1. Read all docs first
+            const docRefs = docIds.map(id => this.collection.doc(id));
+            const docSnapshots = await Promise.all(docRefs.map(docRef => transaction.get(docRef)));
+            for (let i = 0; i < docIds.length; i++) {
+                const id = docIds[i];
+                const docRef = docRefs[i];
+                const docSnapshot = docSnapshots[i];
+                if (!id || !docRef || !docSnapshot)
+                    continue;
                 if (!docSnapshot.exists) {
                     throw new Error(`Document with ID ${id} does not exist`);
                 }
